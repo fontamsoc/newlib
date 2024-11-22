@@ -1,8 +1,10 @@
-#include <machine/syscall.h>
-#include "internal_syscall.h"
+// SPDX-License-Identifier: GPL-2.0-only
+// 20250907 (c) William Fonkou Tambe
 
-/* Establish a new name for an existing file.  */
-int _link(const char *old_name, const char *new_name)
-{
-  return syscall_errno (SYS_link, 2, old_name, new_name, 0, 0, 0, 0);
+#include <errno.h>
+
+// Establish a new name for an existing file.
+__attribute__((weak)) int _link (const char *oldpath, const char *newpath) {
+	errno = EPERM;
+	return -1;
 }
