@@ -1,14 +1,13 @@
-#include <machine/syscall.h>
-#include "kernel_stat.h"
-#include "internal_syscall.h"
+// SPDX-License-Identifier: GPL-2.0-only
+// 20250907 (c) William Fonkou Tambe
 
-/* Status of an open file. The sys/stat.h header file required is
-   distributed in the include subdirectory for this C library.  */
-int
-_fstatat(int dirfd, const char *file, struct stat *st, int flags)
-{
-  struct kernel_stat kst;
-  int rv = syscall_errno (SYS_fstatat, 4, dirfd, file, &kst, flags, 0, 0);
-  _conv_stat (st, &kst);
-  return rv;
+#include <errno.h>
+
+#include "kernel_stat.h"
+
+// Status of an open file. The sys/stat.h header file required
+// is distributed in the include subdirectory for this C library.
+__attribute__((weak)) int _fstatat (int dirfd, const char *file, struct stat *st, int flags) {
+	errno = EPERM;
+	return -1;
 }

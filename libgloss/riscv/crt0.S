@@ -1,108 +1,561 @@
-/* Copyright (c) 2017  SiFive Inc. All rights reserved.
-
-   This copyrighted material is made available to anyone wishing to use,
-   modify, copy, or redistribute it subject to the terms and conditions
-   of the FreeBSD License.   This program is distributed in the hope that
-   it will be useful, but WITHOUT ANY WARRANTY expressed or implied,
-   including the implied warranties of MERCHANTABILITY or FITNESS FOR
-   A PARTICULAR PURPOSE.  A copy of this license is available at
-   http://www.opensource.org/licenses.
-*/
+/* SPDX-License-Identifier: GPL-2.0-only
+   20260504 (c) William Fonkou Tambe */
 
 #include "newlib.h"
 
-#=========================================================================
-# crt0.S : Entry point for RISC-V user programs
-#=========================================================================
+#include "asm.h"
+#include "asm-offsets.h"
 
-  .text
-  .global _start
-  .type   _start, @function
+#include "_os_params.h"
+
+
+  .section ".text._start"
+  .global  _start
+  .type    _start, @function
 _start:
-  # Initialize global pointer
-.option push
-.option norelax
-1:auipc gp, %pcrel_hi(__global_pointer$)
-  addi  gp, gp, %pcrel_lo(1b)
-.option pop
 
-  /* Initialize jvt CSR (reg addr: 0x0017) */
-#ifndef __riscv_cmodel_large
-  .weak __jvt_base$
-  lla a0, __jvt_base$
-#else
-  la a0, .Laddr_jvt_base
-  ld a0, 0(a0)
-#endif
-  beqz a0, .Ljvt_init_end
-.option push
-.option norelax
-.option arch, +zicsr
-  csrw 0x17, a0
-.option pop
-.Ljvt_init_end:
+  # Register sp is assumed set to where memory ends.
 
-  # Clear the bss segment
-#ifndef __riscv_cmodel_large
-  la      a0, __bss_start
-  la      a2, _end
-#else
-  la      a0, .Laddr_bss_start
-  ld      a0, 0(a0)
-  la      a2, .Laddr_end
-  ld      a2, 0(a2)
-#endif
-  sub     a2, a2, a0
-  li      a1, 0
-  call    memset
+  # Init global pointer.
+  .option push
+  .option norelax
+0:auipc gp, %pcrel_hi(__global_pointer$)
+  addi  gp, gp, %pcrel_lo(0b)
+  .option pop
+
+  la   t0, __trap
+  csrw mtvec, t0
+  csrc mstatus, 0x8 /* Clear mstatus.mie to disable IRQs */
+  li   t0, 0x800 # Only set mie.meie to receive external IRQs.
+  csrw mie, t0
+  csrw mscratch, x0
+  /* CPU initialization is done above, while program
+     initialization is done below only by one cpu */
+  csrr s0, mhartid
+  beqz s0, 1f
+  # Park harts for which (mhartid >= NCPU), as there are no
+  # per-CPU data for them; mstatus.mie is off, so wfi never traps.
+  li   t0, NCPU
+  bltu s0, t0, 0f
+2:wfi
+  j 2b
+0:
+  # For an SOC where all cores start, loop here until __ncpu_rendezvous
+  # holds (mhartid ^ RENDEZVOUS_MAGIC): unlike a count, a stale value, ie:
+  # from an image being loaded over this one, cannot release a hart early.
+  la    s1, __ncpu_rendezvous
+  li    t1, RENDEZVOUS_MAGIC
+  xor   t1, t1, s0
+0:REG_L t0, 0(s1)
+  bne   t0, t1, 0b
+  # Use temporary trap stack right below the stack currently used by CPU 0.
+  REG_L sp,__heap_end
+  addi  sp, sp, -TRAP_STACK_SIZE
+  mv tp, x0
+  call __init_secondary_cpu
+  # Increment __ncpu, then release the next hart through __ncpu_rendezvous,
+  # whose address saved register s1 holds; both are word stores.
+  la    t2, __ncpu
+  REG_L t0, 0(t2)
+  addi  t0, t0, 1
+  REG_S t0, 0(t2)
+  li    t1, RENDEZVOUS_MAGIC
+  xor   t1, t1, t0
+  REG_S t1, 0(s1)
+  # Compute trap stack. Saved register s0 has mhartid value. TODO: Only after percpu data has been setup ...
+  slli s0, s0, TRAP_STACK_SHIFT
+  addi s0, s0, TRAP_STACK_SIZE
+  la sp, __trap_stacks # TODO: Get __trap_stacks calling __percpu_ptr();
+  add sp, sp, s0
+  csrs mstatus, 0x8 /* Set mstatus.mie to enable IRQs */
+  wfi
+1:
+  # A loader starting this image by a reset, which writes no register but sp,
+  # ie: apps/bootldr, can give it another end of memory: register ra then holds
+  # -1, which no link can be, register a0 is null, and register a1 holds that
+  # end, unless null. A later reset leaves the registers as they were, hence
+  # the warm boots take the end of memory from __rst_sp, set at cold boot, once
+  # the oops check below passed with the end of memory which the reset gives.
+  li    t0, -1
+  bne   ra, t0, 0f
+  bnez  a0, 0f
+  beqz  a1, 0f
+  mv    sp, a1
+0:
+  # Oops if memory ends below _end, ie: if the image does not fit
+  # in memory; it must be done before the first memory access below.
+  la    t0, _end
+  bltu  sp, t0, __oops_ram
+  # Check whether saving/restoring .data .
+  REG_L a2, __rst_flg
+  bnez  a2, 0f
+  # Cold boot: __rst_sp keeps the end of memory for the warm boots, set before
+  # __rst_flg marks them warm, using an atomic store, which goes straight to
+  # memory, as a reset discards the dirty words of the write-back dcache.
+  la    t0, __rst_sp
+  AMOSWAP x0, sp, (t0)
+  # The copy of .data goes below the stack; __rst_flg, saved with the
+  # copy, then holds the size of .data, which marks the following boots warm.
+  la    a0, __DATA_BEGIN__
+  la    a2, _edata
+  sub   a2, a2, a0
+  sub   sp, sp, a2
+  mv    a1, sp
+  la    t0, __rst_flg
+  AMOSWAP x0, a2, (t0)
+  j     2f
+0:# Warm boot: .data is restored from the copy below the stack, which
+  # begins at the end of memory which the cold boot used.
+  REG_L sp, __rst_sp
+  la    a1, __DATA_BEGIN__
+  sub   sp, sp, a2
+  mv    a0, sp
+2:# Copy a2 bytes from a0 to a1, read and written with atomic accesses, which
+  # go straight to memory: a reset discards the dirty words of the write-back
+  # dcache, so the copy must reach memory at cold boot; and an atomic access
+  # to a locally cached word writes the cached value back before its
+  # read-modify-write, so no word of .data, read at cold boot or written at
+  # warm boot, may stay cached by this hart, as its stale value written back
+  # over an update another hart made in memory would lose that update.
+  add   a2, a2, a0
+3:AMOADD  t2, x0, (a0)
+  AMOSWAP x0, t2, (a1)
+  addi  a0, a0, SZREG
+  addi  a1, a1, SZREG
+  bltu  a0, a2, 3b
+  # Let the gdbstub take over the boot when a program reload is pending:
+  # .data is pristine, .bss is not yet cleared, the secondary harts are
+  # still spinning and tp is not set, ie: the hook must not touch
+  # _thread_cur, which is tp.
+  call __gdbstub_boot
+  # Zero .bss, whose bounds the linker script keeps word aligned, with atomic
+  # stores, which go straight to memory: a plain store would leave a dirty
+  # zero in the dcache, which the first atomic access to that word by this
+  # hart would write back over an update another hart made in memory, losing
+  # it. .noinit follows __bss_end untouched, .persistent precedes __bss_start.
+  la    t0, __bss_start
+  la    t1, __bss_end
+0:AMOSWAP x0, x0, (t0)
+  addi  t0, t0, SZREG
+  bltu  t0, t1, 0b
+
+  # Ascending stack layout:
+  # ------------------------ Start of stack.
+  # | Stack Data           |
+  # ------------------------ <- Stack pointer when calling main().
+  # | TLS Data             |
+  # | _thread_t+tdata+tbss |
+  # ------------------------ End of stack.
+
+  # Init TLS.
+  la   a0, __tbss_start
+  la   a2, __tbss_end
+  sub  a2, a2, a0
+  sub  sp, sp, a2
+  mv   a0, sp
+  li   a1, 0
+  call memset
+  la    a1, __tdata_start
+  la    a2, __tdata_end
+  sub   a2, a2, a1
+  sub   sp, sp, a2
+  mv    a0, sp
+  call  memcpy
+  addi  sp, sp, -THREAD_STRUCT_SIZE
+  mv    tp, sp
+  andi  sp, sp, ~15 # RISC-V required stack alignment.
+
+  la    t1, _end
+  # Oops if we would get (__heap_end < __heap_ptr); ie:
+  # memory too small for the image and what got carved off register sp.
+  bltu  sp, t1, __oops
+  # Init __heap_ptr to _end, and __heap_end to the value of register sp.
+  REG_S t1, __heap_ptr, t0
+  REG_S sp, __heap_end, t0
+
+  mv a0, tp
+  call __init_multithreading
+
 #ifdef _LITE_EXIT
   # Make reference to atexit weak to avoid unconditionally pulling in
   # support code.  Refer to comments in __atexit.c for more details.
-#ifndef __riscv_cmodel_large
-  .weak   atexit
-  la      a0, atexit
-#else
-  la      a0, .Laddr_atexit
-  ld      a0, 0(a0)
-#endif
-  beqz    a0, .Lweak_atexit
-  .weak   __libc_fini_array
+  .weak atexit
+  la    a0, atexit
+  beqz  a0, .Lweak_atexit
+  .weak __libc_fini_array
 #endif
 
-#ifndef __riscv_cmodel_large
-  la      a0, __libc_fini_array   # Register global termination functions
-#else
-  la      a0, .Laddr_libc_fini_array
-  ld      a0, 0(a0)
-#endif
-  call    atexit                  #  to be called upon exit
+  la   a0, __libc_fini_array   # Register global termination functions
+  call atexit                  #  to be called upon exit
 #ifdef _LITE_EXIT
 .Lweak_atexit:
 #endif
-  call    __libc_init_array       # Run global initialization functions
+  call __libc_init_array       # Run global initialization functions
 
-  lw      a0, 0(sp)                  # a0 = argc
-  addi    a1, sp, __SIZEOF_POINTER__ # a1 = argv
-  slli    a2, a0, 1 + __SIZEOF_POINTER__ >> 2
-  addi    a2, a2, __SIZEOF_POINTER__
-  add     a2, a2, a1                 # a2 = envp
-  call    main
-  tail    exit
-#ifdef __riscv_cmodel_large
-.Laddr_gp:
-  .dword __global_pointer$
-.Laddr_jvt_base:
-  .weak __jvt_base$
-  .dword __jvt_base$
-.Laddr_bss_start:
-  .dword __bss_start
-.Laddr_end:
-  .dword _end
-.Laddr_atexit:
-  .weak   atexit
-  .dword atexit
-.Laddr_libc_fini_array:
-  .weak   __libc_fini_array
-  .dword __libc_fini_array
-#endif
-  .size  _start, .-_start
+  # argc, argv, envp are all set to null.
+  li a0, 0
+  li a1, 0
+  li a2, 0
+
+  call  main
+  tail  exit
+
+  .size _start, .-_start
+
+
+  # Park the cpu with a defined signature when booting cannot proceed.
+  # Register a0 has the oops code, register a1 has the __heap_ptr value,
+  # ie: _end, and register a2 has the __heap_end value, ie: register sp.
+  # "OOPS" and the oops code get written to the serial device computed
+  # from registers only, as memory is what cannot be trusted here; mtvec
+  # gets nulled to insure that a stray trap indefinitely halts the cpu
+  # instead of running __trap on an unusable stack.
+  .global __oops_ram
+  .type   __oops_ram, @function
+__oops_ram:
+  li   a0, 0x4f4f5001 # Ascii "OOP" and the reason 1 (memory end < _end).
+  j    0f
+  .size __oops_ram, .-__oops_ram
+
+  .global __oops
+  .type   __oops, @function
+__oops:
+  li   a0, 0x4f4f5002 # Ascii "OOP" and the reason 2 (__heap_end < __heap_ptr).
+0:la   a1, _end
+  mv   a2, sp
+  li   t0, SERIAL0_ADDR
+  li   t1, 0x4f # 'O'
+  sb   t1, 0(t0)
+  sb   t1, 0(t0)
+  li   t1, 0x50 # 'P'
+  sb   t1, 0(t0)
+  li   t1, 0x53 # 'S'
+  sb   t1, 0(t0)
+  addi t1, a0, '0'
+  sb   t1, 0(t0)
+  li   t1, 0x0a # '\n'
+  sb   t1, 0(t0)
+  csrw mtvec, x0
+  ebreak # Indefinitely halt the cpu; it also ends a simulation.
+1:wfi # mstatus.mie is off, so wfi never traps.
+  j 1b
+  .size __oops, .-__oops
+
+
+  .text
+  .global __trap
+  .type   __trap, @function
+__trap:
+
+  addi  sp, sp, -SAVEDCTX_SIZE
+
+  bnez tp, 1f
+  csrrw t1, mscratch, t1 /* mscratch is non-null if interrupting the handling of a trap */
+  bnez t1, 0f
+  csrw mscratch, x0
+  j 2f
+0:
+  csrrw t1, mscratch, t1 /* restore t1 and mscratch */
+1:
+  REG_S ra, SAVEDCTX_RA(sp)
+  /* sp is saved later */
+  REG_S t0, SAVEDCTX_T0(sp)
+  REG_S t1, SAVEDCTX_T1(sp)
+  REG_S t2, SAVEDCTX_T2(sp)
+  REG_S s0, SAVEDCTX_S0(sp)
+  REG_S s1, SAVEDCTX_S1(sp)
+  REG_S a0, SAVEDCTX_A0(sp)
+  REG_S a1, SAVEDCTX_A1(sp)
+  REG_S a2, SAVEDCTX_A2(sp)
+  REG_S a3, SAVEDCTX_A3(sp)
+  REG_S a4, SAVEDCTX_A4(sp)
+  REG_S a5, SAVEDCTX_A5(sp)
+  REG_S a6, SAVEDCTX_A6(sp)
+  REG_S a7, SAVEDCTX_A7(sp)
+  REG_S s2, SAVEDCTX_S2(sp)
+  REG_S s3, SAVEDCTX_S3(sp)
+  REG_S s4, SAVEDCTX_S4(sp)
+  REG_S s5, SAVEDCTX_S5(sp)
+  REG_S s6, SAVEDCTX_S6(sp)
+  REG_S s7, SAVEDCTX_S7(sp)
+  REG_S s8, SAVEDCTX_S8(sp)
+  REG_S s9, SAVEDCTX_S9(sp)
+  REG_S s10, SAVEDCTX_S10(sp)
+  REG_S s11, SAVEDCTX_S11(sp)
+  REG_S t3, SAVEDCTX_T3(sp)
+  REG_S t4, SAVEDCTX_T4(sp)
+  REG_S t5, SAVEDCTX_T5(sp)
+  REG_S t6, SAVEDCTX_T6(sp)
+
+  addi  t0, sp, SAVEDCTX_SIZE
+  REG_S t0, SAVEDCTX_SP(sp)
+
+  csrr  t1, mscratch
+2:
+  csrr  t2, mstatus
+  csrr  t3, mepc
+  csrr  t4, mtval
+  csrr  t5, mtval2
+  csrr  t6, mcause
+  REG_S t1, SAVEDCTX_SCRATCH(sp)
+  REG_S t2, SAVEDCTX_STATUS(sp)
+  REG_S t3, SAVEDCTX_EPC(sp)
+  REG_S t4, SAVEDCTX_TVAL(sp)
+  REG_S t5, SAVEDCTX_TVAL2(sp)
+  REG_S t6, SAVEDCTX_CAUSE(sp)
+
+  csrw mscratch, sp /* _trap_savedctx */
+
+  # MSB of cause differentiates between
+  # interrupts and exceptions.
+  bge t6, x0, 0f
+
+  # Handle interrupts.
+  call __trap_irq
+  j 1f
+0: # Handle other exceptions.
+  slli t0, t6, LGREG
+  la t1, .Lexc_tbl_start
+  la t2, .Lexc_tbl_end
+  add t0, t1, t0
+  bgeu t0, t2, 0f
+  REG_L t0, 0(t0)
+  jalr t0
+  j 1f
+0:
+  call __trap_exc_inv
+__trap_ret: # Label used from __switchctx().
+1: # Advance the saved EPC to the next instruction if true was returned.
+  beqz a0, 0f
+  REG_L t3, SAVEDCTX_EPC(sp)
+  addi t3, t3, 4
+  REG_S t3, SAVEDCTX_EPC(sp)
+0:
+  REG_L t2, SAVEDCTX_STATUS(sp)
+#if USETAILCHAIN
+  # Tail-chain: if another interrupt is already pending and enabled,
+  # dispatch it now on the still-live saved context, skipping the full
+  # register restore, mret, hardware re-trap and register re-save.
+  # Chain only if the interrupted context had IRQs enabled (mstatus.MPIE),
+  # as handlers could otherwise deadlock on spinlocks it is holding.
+  andi t0, t2, 0x80 /* mstatus.MPIE */
+  beqz t0, 2f
+  csrr t3, mip
+  csrr t4, mie
+  and  t3, t3, t4
+  li   t4, 7 /* Machine Timer */
+  andi t5, t3, 0x80 /* mip.MTIP */
+  srli t3, t3, 11
+  andi t3, t3, 1 /* mip.MEIP */
+  beqz t3, 3f
+  li   t4, 11 /* Machine External; higher hw priority than Machine Timer */
+3:
+  or   t5, t5, t3
+  beqz t5, 2f
+  li   t0, (1<<(__riscv_xlen-1))
+  or   t4, t4, t0
+  REG_S t4, SAVEDCTX_CAUSE(sp)
+  csrw mscratch, sp /* _trap_savedctx; stale or null when arriving from __switchctx() */
+  call __trap_irq
+  j 1b
+2:
+#endif /* USETAILCHAIN */
+  REG_L t3, SAVEDCTX_EPC(sp)
+  csrw mepc, t3
+  csrw mstatus, t2
+  REG_L t1, SAVEDCTX_SCRATCH(sp)
+  csrw mscratch, t1
+
+  bnez tp, 0f
+  beqz t1, 1f
+0:
+  REG_L ra, SAVEDCTX_RA(sp)
+  /* sp is restored later */
+  REG_L t0, SAVEDCTX_T0(sp)
+  REG_L t1, SAVEDCTX_T1(sp)
+  REG_L t2, SAVEDCTX_T2(sp)
+  REG_L s0, SAVEDCTX_S0(sp)
+  REG_L s1, SAVEDCTX_S1(sp)
+  REG_L a0, SAVEDCTX_A0(sp)
+  REG_L a1, SAVEDCTX_A1(sp)
+  REG_L a2, SAVEDCTX_A2(sp)
+  REG_L a3, SAVEDCTX_A3(sp)
+  REG_L a4, SAVEDCTX_A4(sp)
+  REG_L a5, SAVEDCTX_A5(sp)
+  REG_L a6, SAVEDCTX_A6(sp)
+  REG_L a7, SAVEDCTX_A7(sp)
+  REG_L s2, SAVEDCTX_S2(sp)
+  REG_L s3, SAVEDCTX_S3(sp)
+  REG_L s4, SAVEDCTX_S4(sp)
+  REG_L s5, SAVEDCTX_S5(sp)
+  REG_L s6, SAVEDCTX_S6(sp)
+  REG_L s7, SAVEDCTX_S7(sp)
+  REG_L s8, SAVEDCTX_S8(sp)
+  REG_L s9, SAVEDCTX_S9(sp)
+  REG_L s10, SAVEDCTX_S10(sp)
+  REG_L s11, SAVEDCTX_S11(sp)
+  REG_L t3, SAVEDCTX_T3(sp)
+  REG_L t4, SAVEDCTX_T4(sp)
+  REG_L t5, SAVEDCTX_T5(sp)
+  REG_L t6, SAVEDCTX_T6(sp)
+  REG_L sp, SAVEDCTX_SP(sp)
+  mret
+1:
+  addi sp, sp, SAVEDCTX_SIZE
+  csrs mstatus, 0x8 /* Set mstatus.mie to enable IRQs */
+  wfi
+
+  .size __trap, .-__trap
+
+
+  .text
+  /* void __switchctx (_thread_t *to) */
+  /* WARNING: Must be called with IRQs disabled */
+  .global __switchctx
+  .type   __switchctx, @function
+__switchctx:
+
+  beqz tp, 0f
+
+  addi  sp, sp, -SAVEDCTX_SIZE
+  REG_S sp, THREAD_SAVEDCTX(tp)
+
+  csrr  t1, mscratch
+  REG_S t1, SAVEDCTX_SCRATCH(sp)
+  /* If mscratch is non-null, skip saving other SAVEDCTX_*
+     as the thread will be restored from its trap context. */
+  bnez t1, 3f
+
+  REG_S ra, SAVEDCTX_RA(sp)
+  REG_S s0, SAVEDCTX_S0(sp)
+  REG_S s1, SAVEDCTX_S1(sp)
+  REG_S s2, SAVEDCTX_S2(sp)
+  REG_S s3, SAVEDCTX_S3(sp)
+  REG_S s4, SAVEDCTX_S4(sp)
+  REG_S s5, SAVEDCTX_S5(sp)
+  REG_S s6, SAVEDCTX_S6(sp)
+  REG_S s7, SAVEDCTX_S7(sp)
+  REG_S s8, SAVEDCTX_S8(sp)
+  REG_S s9, SAVEDCTX_S9(sp)
+  REG_S s10, SAVEDCTX_S10(sp)
+  REG_S s11, SAVEDCTX_S11(sp)
+
+  csrr  t2, mstatus
+  REG_S t2, SAVEDCTX_STATUS(sp)
+3:
+  /* Publish that the context is fully saved; a CPU wanting to resume
+     this thread spinwaits on it below, so that it cannot restore a
+     stale or partially saved context. */
+  li    t0, 1
+  REG_S t0, THREAD_CTXSAVED(tp)
+0:
+  bnez a0, 0f
+  csrr t0, mhartid
+  slli t0, t0, TRAP_STACK_SHIFT
+  addi t0, t0, TRAP_STACK_SIZE
+  la sp, __trap_stacks
+  add sp, sp, t0
+  mv tp, x0
+  /* Clear mscratch, which is still non-null when a thread parked itself
+     from a trap handling; a trap taken while idle would otherwise
+     mistake the idle context for an interrupted trap handling, and
+     mret past the wfi into the null-tp restore path below. */
+  csrw mscratch, x0
+  csrs mstatus, 0x8 /* Set mstatus.mie to enable IRQs */
+  wfi
+0:
+  mv tp, a0
+
+  /* Wait until the thread context is fully saved before restoring it,
+     as the CPU switching it out could still be saving it; then clear
+     the flag for the next time the thread is switched-out. */
+3:REG_L t0, THREAD_CTXSAVED(tp)
+  beqz  t0, 3b
+  REG_S x0, THREAD_CTXSAVED(tp)
+
+  REG_L sp, THREAD_SAVEDCTX(tp)
+
+  REG_L t1, SAVEDCTX_SCRATCH(sp)
+  /* If the thread mscratch is non-null, restore from trap context */
+  beqz t1, 0f
+  mv sp, t1
+  mv a0, x0
+  j __trap_ret
+0:
+  REG_L t2, SAVEDCTX_STATUS(sp)
+
+  REG_L ra, SAVEDCTX_RA(sp)
+
+  csrw mscratch, t1
+  csrw mstatus,  t2
+
+  REG_L t3, THREAD_CPU(tp)
+  /* If the thread cpu number is negative, restore
+     s0 in a0, and skip restoring saved registers */
+  bge t3, x0, 0f
+  neg t3, t3
+  addi t3, t3, -1
+  REG_S t3, THREAD_CPU(tp)
+  REG_L t4, SAVEDCTX_S1(sp)
+  REG_L a0, SAVEDCTX_S0(sp)
+  addi sp, sp, SAVEDCTX_SIZE
+  jr t4
+0:
+  REG_L s0, SAVEDCTX_S0(sp)
+  REG_L s1, SAVEDCTX_S1(sp)
+  REG_L s2, SAVEDCTX_S2(sp)
+  REG_L s3, SAVEDCTX_S3(sp)
+  REG_L s4, SAVEDCTX_S4(sp)
+  REG_L s5, SAVEDCTX_S5(sp)
+  REG_L s6, SAVEDCTX_S6(sp)
+  REG_L s7, SAVEDCTX_S7(sp)
+  REG_L s8, SAVEDCTX_S8(sp)
+  REG_L s9, SAVEDCTX_S9(sp)
+  REG_L s10, SAVEDCTX_S10(sp)
+  REG_L s11, SAVEDCTX_S11(sp)
+  addi sp, sp, SAVEDCTX_SIZE
+  ret
+
+  .size __switchctx, .-__switchctx
+
+
+  .section ".rodata"
+  .p2align LGREG
+.Lexc_tbl_start: # Exception table.
+  LITWORD __trap_exc_insn_misaligned
+  LITWORD __trap_exc_insn_afault
+  LITWORD __trap_exc_insn_illegal
+  LITWORD __trap_exc_break
+  LITWORD __trap_exc_load_misaligned
+  LITWORD __trap_exc_load_afault
+  LITWORD __trap_exc_store_misaligned
+  LITWORD __trap_exc_store_afault
+  LITWORD __trap_exc_ecall_u
+  LITWORD __trap_exc_ecall_s
+  LITWORD __trap_exc_inv # Reserved.
+  LITWORD __trap_exc_ecall_m
+  LITWORD __trap_exc_insn_pfault
+  LITWORD __trap_exc_load_pfault
+  LITWORD __trap_exc_inv # Reserved.
+  LITWORD __trap_exc_store_pfault
+.Lexc_tbl_end:
+
+
+  .data
+  .p2align LGREG
+  # __rst_sp holds the end of memory which the cold boot used, ie: where the
+  # stack data which apps/bootldr passes begins, when there is some.
+  .global __rst_flg;  __rst_flg:  LITWORD 0
+  .global __rst_sp;   __rst_sp:   LITWORD 0
+  .global __heap_ptr; __heap_ptr: LITWORD 0
+  .global __heap_end; __heap_end: LITWORD 0
+  .size   __rst_flg,  SZREG
+  .size   __rst_sp,   SZREG
+  .size   __heap_ptr, SZREG
+  .size   __heap_end, SZREG
+
+
+  .section ".tdata.__thread_cur"
+  .p2align LGREG
+  .global __thread_cur; __thread_cur: .skip THREAD_STRUCT_SIZE
+  .size   __thread_cur, THREAD_STRUCT_SIZE

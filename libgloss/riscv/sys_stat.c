@@ -1,14 +1,12 @@
-#include <machine/syscall.h>
+// SPDX-License-Identifier: GPL-2.0-only
+// 20250907 (c) William Fonkou Tambe
+
+#include <errno.h>
+
 #include "kernel_stat.h"
-#include "internal_syscall.h"
 
-/* Status of a file (by name).  */
-
-int
-_stat(const char *file, struct stat *st)
-{
-  struct kernel_stat kst;
-  int rv = syscall_errno (SYS_stat, 2, file, &kst, 0, 0, 0, 0);
-  _conv_stat (st, &kst);
-  return rv;
+// Status of a file (by name).
+__attribute__((weak)) int _stat (const char *file, struct stat *st) {
+	errno = EPERM;
+	return -1;
 }

@@ -1,7 +1,40 @@
+
+CPPFLAGS += -march=rv32ima_zicsr_zifencei -I./%D%
+
+define sed-y
+	's:^[[:space:]]*\.ascii[[:space:]]*"\(.*\)".*:\1:; \
+	/^->/{s:->#\(.*\):/* \1 */:; \
+	s:^->\([^ ]*\) [\$$#]*\([-0-9]*\) \(.*\):#define \1 \2 /* \3 */:; \
+	s:^->\([^ ]*\) [\$$#]*\([^ ]*\) \(.*\):#define \1 \2 /* \3 */:; \
+	s:->::; p;}'
+endef
+
+define make_asm_offsets
+	(set -e; \
+	 echo "#ifndef __LIBGLOSS_RISCV_ASM_OFFSETS_H"; \
+	 echo "#define __LIBGLOSS_RISCV_ASM_OFFSETS_H"; \
+	 echo ""; \
+	 echo "/*"; \
+	 echo " * Generated file. DO NOT MODIFY."; \
+	 echo " */"; \
+	 echo ""; \
+	 sed -ne $(sed-y) $<; \
+	 echo ""; \
+	 echo "#endif /* __LIBGLOSS_RISCV_ASM_OFFSETS_H */" ) > $@
+endef
+
+%D%/asm-offsets.s: %D%/asm-offsets.c
+	$(AM_V_CC)$(COMPILE) -S -o $@ $<
+
+%D%/asm-offsets.h: %D%/asm-offsets.s
+	$(call make_asm_offsets)
+
+%D%/crt0.o: %D%/asm-offsets.h
+
+CLEANFILES += %D%/asm-offsets.s %D%/asm-offsets.h
+
 multilibtool_DATA += \
 	%D%/nano.specs \
-	%D%/sim.specs \
-	%D%/semihost.specs \
 	%D%/crt0.o
 
 multilibtool_LIBRARIES += %D%/libgloss.a
@@ -38,41 +71,23 @@ multilibtool_LIBRARIES += %D%/libgloss.a
 	%D%/sys_unlink.c \
 	%D%/sys_utime.c \
 	%D%/sys_wait.c \
-	%D%/sys_write.c
-
-multilibtool_LIBRARIES += %D%/libsim.a
-%C%_libsim_a_CPPFLAGS = $(%C%_libgloss_a_CPPFLAGS) -DUSING_SIM_SPECS
-%C%_libsim_a_SOURCES = $(%C%_libgloss_a_SOURCES)
-
-multilibtool_LIBRARIES += %D%/libsemihost.a
-%C%_libsemihost_a_CPPFLAGS = -I$(srcdir)/%D%
-%C%_libsemihost_a_SOURCES = \
+	%D%/sys_write.c \
 	%D%/nanosleep.c \
-	%D%/sys_chdir.c \
-	%D%/sys_chmod.c \
-	%D%/sys_chown.c \
-	%D%/sys_execve.c \
-	%D%/sys_fork.c \
-	%D%/sys_getcwd.c \
-	%D%/sys_getpid.c \
-	%D%/sys_kill.c \
-	%D%/sys_utime.c \
-	%D%/sys_wait.c \
-	%D%/semihost-sys_close.c \
-	%D%/semihost-sys_exit.c \
-	%D%/semihost-sys_fdtable.c \
-	%D%/semihost-sys_fstat.c \
-	%D%/semihost-sys_ftime.c \
-	%D%/semihost-sys_isatty.c \
-	%D%/semihost-sys_link.c \
-	%D%/semihost-sys_lseek.c \
-	%D%/semihost-sys_open.c \
-	%D%/semihost-sys_read.c \
-	%D%/semihost-sys_sbrk.c \
-	%D%/semihost-sys_stat.c \
-	%D%/semihost-sys_stat_common.c \
-	%D%/semihost-sys_unlink.c \
-	%D%/semihost-sys_write.c
+	%D%/mlock.c \
+	%D%/lock.c \
+	%D%/_os.c
+
+multilibtool_LIBRARIES += %D%/libgdbstub.a
+%C%_libgdbstub_a_CPPFLAGS = -I$(srcdir)/%D%
+%C%_libgdbstub_a_SOURCES = %D%/_os_gdbstub.c
+# Optimize the gdbstub for size; appended after CFLAGS, the -Os
+# overrides the -O that the toolchain build passes down through
+# CFLAGS_FOR_TARGET (ie: the last -O flag wins); override is needed
+# as the build passes CFLAGS on the make command line, which would
+# otherwise silently discard a target-specific append.
+%D%/libgdbstub_a-_os_gdbstub.$(OBJEXT): override CFLAGS += -Os
+
+includetool_DATA += %D%/_os.h
 
 includemachinetooldir = $(tooldir)/include/machine
 includemachinetool_DATA = %D%/machine/syscall.h
