@@ -1,10 +1,11 @@
-#include <machine/syscall.h>
-#include <sys/types.h>
-#include "internal_syscall.h"
+// SPDX-License-Identifier: GPL-2.0-only
+// 20250907 (c) William Fonkou Tambe
 
-/* Set position in a file.  */
-off_t
-_lseek(int file, off_t ptr, int dir)
-{
-  return syscall_errno (SYS_lseek, 3, file, ptr, dir, 0, 0, 0);
+#include <sys/types.h>
+#include <errno.h>
+
+// Set position in a file.
+__attribute__((weak)) off_t _lseek (int file, off_t ptr, int dir) {
+	errno = EPERM;
+	return -1;
 }
