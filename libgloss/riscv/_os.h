@@ -115,10 +115,11 @@ void _irq_unregister (_irq_t *i);
 
 typedef struct {
 	uintptr_t lock;
+	uintptr_t p; // Used to avoid mutex and fifo race conditions.
 	void *l; // Points to a circular linked list of _thread_t(s) waiting.
 } _waitq_t;
 
-#define _WAITQ_CLR {0, 0}
+#define _WAITQ_CLR {0, 0, 0}
 
 typedef struct {
 	uintptr_t lock;
