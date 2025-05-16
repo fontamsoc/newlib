@@ -700,6 +700,8 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 	bool is_stack_given = (stack ? true : false);
 	if (!is_stack_given) {
 		stack = malloc(stacksz);
+		if (!stack)
+			_oops();
 		stacksz = malloc_usable_size(stack);
 	}
 	_thread_t *thrd = ((stack + stacksz) - sizeof(_thread_t));
