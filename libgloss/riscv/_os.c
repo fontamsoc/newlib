@@ -513,7 +513,7 @@ size_t _fifo_get (_fifo_t *f, void *buf, size_t sz, bool peek, _date_t timeout) 
 		while (_xchg(&f->lock, 1));
 		if (flush)
 			sz = (f->widx - f->ridx);
-		if ((f->widx - f->ridx) < sz) {
+		else if ((f->widx - f->ridx) < sz) {
 			if (!f->rwaitq.l)
 				_atomic_inc(&f->rwaitq.p);
 			_xchg(&f->lock, 0);
