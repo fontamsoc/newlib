@@ -436,15 +436,25 @@ size_t _fifo_put (_fifo_t *f, void *buf, size_t sz, _date_t timeout) {
 	if (timeout) {
 		while (_xchg(&f->lock, 1));
 		if (((f->widx - f->ridx) + sz) > fsz) {
+			_date_t sleepstart, sleepduration = 0;
+			sleeponwq:;
+			if (timeout != _DATE_MAX)
+				sleepstart = _clkcycles();
 			if (!f->wwaitq.l)
 				_atomic_inc(&f->wwaitq.p);
 			_xchg(&f->lock, 0);
 			// f->wwaitq.p gets incremented to avoid a race condition in a
 			// similar manner that it is done and explained in _mutex_lock().
 			_thread_sleeponwq(&f->wwaitq, timeout);
+			if (timeout != _DATE_MAX)
+				sleepduration = (_clkcycles() - sleepstart);
 			while (_xchg(&f->lock, 1));
 			if (((f->widx - f->ridx) + sz) > fsz) {
 				_thread_schedone(&f->wwaitq);
+				if (sleepduration < timeout) {
+					timeout -= sleepduration;
+					goto sleeponwq;
+				}
 				_xchg(&f->lock, 0);
 				_preempt_enable();
 				return 0; // Return 0 because it must be write-all or nothing.
@@ -514,15 +524,25 @@ size_t _fifo_get (_fifo_t *f, void *buf, size_t sz, bool peek, _date_t timeout) 
 		if (flush)
 			sz = (f->widx - f->ridx);
 		else if ((f->widx - f->ridx) < sz) {
+			_date_t sleepstart, sleepduration = 0;
+			sleeponwq:;
+			if (timeout != _DATE_MAX)
+				sleepstart = _clkcycles();
 			if (!f->rwaitq.l)
 				_atomic_inc(&f->rwaitq.p);
 			_xchg(&f->lock, 0);
 			// f->rwaitq.p gets incremented to avoid a race condition in a
 			// similar manner that it is done and explained in _mutex_lock().
 			_thread_sleeponwq(&f->rwaitq, timeout);
+			if (timeout != _DATE_MAX)
+				sleepduration = (_clkcycles() - sleepstart);
 			while (_xchg(&f->lock, 1));
 			if ((f->widx - f->ridx) < sz) {
 				_thread_schedone(&f->rwaitq);
+				if (sleepduration < timeout) {
+					timeout -= sleepduration;
+					goto sleeponwq;
+				}
 				_xchg(&f->lock, 0);
 				_preempt_enable();
 				return 0; // Return 0 because it must be read-all or nothing.
