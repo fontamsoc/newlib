@@ -381,7 +381,6 @@ uintptr_t _mutex_lock_recursive (_mutex_t *m, _date_t timeout) {
 	}
 	if (_mutex_lock(m, timeout)) {
 		m->owner = _tpval();
-		m->acqcnt = 2;
 		return 1;
 	}
 	return 0;
@@ -390,8 +389,10 @@ uintptr_t _mutex_lock_recursive (_mutex_t *m, _date_t timeout) {
 void _mutex_unlock_recursive (_mutex_t *m) {
 	if (m->owner != _tpval())
 		_oops();
-	if (--m->acqcnt >= 2)
+	if (m->acqcnt > 1) {
+		--m->acqcnt;
 		return;
+	}
 	m->owner = 0;
 	_mutex_unlock(m);
 }
