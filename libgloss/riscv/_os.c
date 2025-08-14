@@ -323,8 +323,8 @@ bool __trap_irq (void) {
 }
 
 uintptr_t _mutex_lock (_mutex_t *m, _date_t timeout) {
+	_preempt_disable();
 	if (timeout) {
-		_preempt_disable();
 		while (_xchg(&m->lock, 1));
 		if (m->acqcnt) {
 			if (!m->waitq.l)
@@ -359,6 +359,7 @@ uintptr_t _mutex_lock (_mutex_t *m, _date_t timeout) {
 	unlock:
 	_xchg(&m->lock, 0);
 	done:
+	_preempt_enable();
 	return ret;
 }
 
@@ -412,6 +413,7 @@ void _fifo_init (_fifo_t *f, void *buf, size_t sz) {
 // This function sleeps until there is enough space in the _fifo_t.
 // Null is returned if timeout occurred, otherwise the value of the argument sz is returned.
 size_t _fifo_put (_fifo_t *f, void *buf, size_t sz, _date_t timeout) {
+	_preempt_disable();
 	size_t fsz = f->sz;
 	if (sz > fsz)
 		_oops();
@@ -431,7 +433,6 @@ size_t _fifo_put (_fifo_t *f, void *buf, size_t sz, _date_t timeout) {
 		}
 	}
 	if (timeout) {
-		_preempt_disable();
 		while (_xchg(&f->lock, 1));
 		if (((f->widx - f->ridx) + sz) > fsz) {
 			if (!f->wwaitq.l)
@@ -467,6 +468,7 @@ size_t _fifo_put (_fifo_t *f, void *buf, size_t sz, _date_t timeout) {
 	unlock:
 	_xchg(&f->lock, 0);
 	done:
+	_preempt_enable();
 	return ret;
 }
 
@@ -478,6 +480,7 @@ size_t _fifo_put (_fifo_t *f, void *buf, size_t sz, _date_t timeout) {
 // If data can be retrieved from the _fifo_t, the argument peek prevents its removal if true.
 // Null is returned if timeout occurred, otherwise the value of the argument sz is returned.
 size_t _fifo_get (_fifo_t *f, void *buf, size_t sz, bool peek, _date_t timeout) {
+	_preempt_disable();
 	bool flush = (sz == -1);
 	size_t fsz = f->sz;
 	if (!flush && sz > fsz)
@@ -506,7 +509,6 @@ size_t _fifo_get (_fifo_t *f, void *buf, size_t sz, bool peek, _date_t timeout) 
 		}
 	}
 	if (flush || timeout) {
-		_preempt_disable();
 		while (_xchg(&f->lock, 1));
 		if (flush)
 			sz = (f->widx - f->ridx);
@@ -544,6 +546,7 @@ size_t _fifo_get (_fifo_t *f, void *buf, size_t sz, bool peek, _date_t timeout) 
 	unlock:
 	_xchg(&f->lock, 0);
 	done:
+	_preempt_enable();
 	return ret;
 }
 
@@ -734,13 +737,13 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 // The thread being moved cannot be _thread_cur.
 // Note that it does not preempt _thread_cur.
 void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
+	_preempt_disable();
 	// _thread_cur is not used in this function, otherwise
 	// it would not be useable in a trap handling.
 	// The thread being moved cannot be _thread_cur (ie: __runq[_cpuid()].cur),
 	// because it needs its resume context to already have been saved.
 	if (thrd == __runq[_cpuid()].cur || !thrd->savedctx.tp || cpu >= __ncpu)
 		_oops();
-	_preempt_disable();
 	if (thrd->wq)
 		__thread_removefromwq(thrd);
 	// If thrd state is already _THREAD_RUNNING, remove it from its runq.
@@ -933,9 +936,9 @@ void _thread_schedall (_waitq_t *wq) {
 
 // Preempt thread currently running on a cpu.
 void _thread_preempt (uintptr_t cpu) {
+	_preempt_disable();
 	if (cpu >= __ncpu)
 		_oops();
-	_preempt_disable();
 	if (cpu != _cpuid()) {
 		// Send IPI to preempt thread running on the CPU.
 		__irq_ipi(cpu);
