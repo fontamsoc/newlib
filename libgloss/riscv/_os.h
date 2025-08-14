@@ -123,8 +123,8 @@ typedef struct {
 
 typedef struct {
 	uintptr_t lock;
-	volatile void* owner; // _tpval() when mutex was acquired.
-	volatile uintptr_t acqcnt; // Acquisition count.
+	void* owner; // _tpval() when mutex was acquired.
+	uintptr_t acqcnt; // Acquisition count.
 	_waitq_t waitq; // Used by _thread_t(s) waiting on this _mutex_t.
 } _mutex_t;
 
@@ -137,7 +137,8 @@ void _mutex_unlock_recursive (_mutex_t *m);
 
 typedef struct {
 	uintptr_t lock;
-	volatile uintptr_t widx, ridx;
+	uintptr_t widx;
+	uintptr_t ridx;
 	void *buf;
 	size_t sz;
 	_waitq_t wwaitq; // Used by _thread_t(s) waiting from _fifo_put().
