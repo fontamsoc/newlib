@@ -178,9 +178,9 @@ typedef struct {
 		uintptr_t scratch; // Only scratch and tp are valid if handling a trap.
 		uintptr_t status;
 	} savedctx; // Save area for context switching.
-} _thread_t;
+} _thread_t; // Its size must be a multiple of sizeof(uintptr_t).
 
-extern __thread _thread_t *_thread_cur;
+extern __thread _thread_t _thread_cur;
 
 typedef struct {
 	uintptr_t ra, sp, gp, tp;

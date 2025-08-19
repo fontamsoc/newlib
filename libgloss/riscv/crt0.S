@@ -85,14 +85,9 @@ _start:
   # ------------------------ <- Stack pointer when calling main().
   # | TLS Data             |
   # | _thread_cur is first |
-  # ------------------------
-  # | _thread_t            |
   # ------------------------ End of stack.
 
-  addi sp, sp, -THREAD_STRUCT_SIZE
-
   # Init TLS.
-  mv   s0, sp
   la   a0, __tbss_start
   la   a2, __tbss_end
   sub  a2, a2, a0
@@ -106,10 +101,8 @@ _start:
   sub   sp, sp, a2
   mv    a0, sp
   call  memcpy
+  addi  sp, sp, -THREAD_STRUCT_SIZE
   mv    tp, sp
-  lui   t0, %tprel_hi(_thread_cur)
-  add   t0, t0, tp, %tprel_add(_thread_cur)
-  REG_S s0, %tprel_lo(_thread_cur)(t0)
 
   # Init __heap_ptr to _end, and __heap_end to the value of register sp.
   la    t0, __heap_ptr
@@ -118,7 +111,7 @@ _start:
   la    t0, __heap_end
   REG_S sp, 0(t0)
 
-  mv a0, s0
+  mv a0, tp
   call __init_multithreading
 
 #ifdef _LITE_EXIT
@@ -292,35 +285,31 @@ __switchctx:
 
   beqz tp, 0f
 
-  lui   t0, %tprel_hi(_thread_cur)
-  add   t0, t0, tp, %tprel_add(_thread_cur)
-  REG_L t0, %tprel_lo(_thread_cur)(t0)
-
   csrr  t1, mscratch
-  REG_S t1, THREAD_SAVEDCTX_SCRATCH(t0)
+  REG_S t1, THREAD_SAVEDCTX_SCRATCH(tp)
   /* If mscratch is non-null, skip saving the other THREAD_SAVEDCTX_*
      as the thread will be restored from its trap context. */
   bnez t1, 0f
 
-  REG_S ra, THREAD_SAVEDCTX_RA(t0)
-  REG_S sp, THREAD_SAVEDCTX_SP(t0)
+  REG_S ra, THREAD_SAVEDCTX_RA(tp)
+  REG_S sp, THREAD_SAVEDCTX_SP(tp)
   /* THREAD_SAVEDCTX_TP is written only at creation,
      and used for signalling termination when set null */
-  REG_S s0, THREAD_SAVEDCTX_S0(t0)
-  REG_S s1, THREAD_SAVEDCTX_S1(t0)
-  REG_S s2, THREAD_SAVEDCTX_S2(t0)
-  REG_S s3, THREAD_SAVEDCTX_S3(t0)
-  REG_S s4, THREAD_SAVEDCTX_S4(t0)
-  REG_S s5, THREAD_SAVEDCTX_S5(t0)
-  REG_S s6, THREAD_SAVEDCTX_S6(t0)
-  REG_S s7, THREAD_SAVEDCTX_S7(t0)
-  REG_S s8, THREAD_SAVEDCTX_S8(t0)
-  REG_S s9, THREAD_SAVEDCTX_S9(t0)
-  REG_S s10, THREAD_SAVEDCTX_S10(t0)
-  REG_S s11, THREAD_SAVEDCTX_S11(t0)
+  REG_S s0, THREAD_SAVEDCTX_S0(tp)
+  REG_S s1, THREAD_SAVEDCTX_S1(tp)
+  REG_S s2, THREAD_SAVEDCTX_S2(tp)
+  REG_S s3, THREAD_SAVEDCTX_S3(tp)
+  REG_S s4, THREAD_SAVEDCTX_S4(tp)
+  REG_S s5, THREAD_SAVEDCTX_S5(tp)
+  REG_S s6, THREAD_SAVEDCTX_S6(tp)
+  REG_S s7, THREAD_SAVEDCTX_S7(tp)
+  REG_S s8, THREAD_SAVEDCTX_S8(tp)
+  REG_S s9, THREAD_SAVEDCTX_S9(tp)
+  REG_S s10, THREAD_SAVEDCTX_S10(tp)
+  REG_S s11, THREAD_SAVEDCTX_S11(tp)
 
   csrr  t2, mstatus
-  REG_S t2, THREAD_SAVEDCTX_STATUS(t0)
+  REG_S t2, THREAD_SAVEDCTX_STATUS(tp)
 0:
   bnez a0, 0f
   csrr t0, mhartid
@@ -332,46 +321,46 @@ __switchctx:
   csrs mstatus, 0x8 /* Set mstatus.mie to enable IRQs */
   wfi
 0:
-  REG_L tp, THREAD_SAVEDCTX_TP(a0)
+  mv tp, a0 /* No need to load from THREAD_SAVEDCTX_TP */
 
-  REG_L t1, THREAD_SAVEDCTX_SCRATCH(a0)
+  REG_L t1, THREAD_SAVEDCTX_SCRATCH(tp)
   /* If the thread mscratch is non-null, restore from trap context */
   beqz t1, 0f
   mv sp, t1
   mv a0, x0
   j __trap_ret
 0:
-  REG_L t2, THREAD_SAVEDCTX_STATUS(a0)
+  REG_L t2, THREAD_SAVEDCTX_STATUS(tp)
 
-  REG_L ra, THREAD_SAVEDCTX_RA(a0)
-  REG_L sp, THREAD_SAVEDCTX_SP(a0)
+  REG_L ra, THREAD_SAVEDCTX_RA(tp)
+  REG_L sp, THREAD_SAVEDCTX_SP(tp)
 
   csrw mscratch, t1
   csrw mstatus, t2
 
-  REG_L t3, THREAD_CPU(a0)
+  REG_L t3, THREAD_CPU(tp)
   /* If the thread cpu number is negative, restore
      s0 in a0, and skip restoring saved registers */
   bge t3, x0, 0f
   neg t3, t3
   addi t3, t3, -1
-  REG_S t3, THREAD_CPU(a0)
-  REG_L t4, THREAD_SAVEDCTX_S1(a0)
-  REG_L a0, THREAD_SAVEDCTX_S0(a0)
+  REG_S t3, THREAD_CPU(tp)
+  REG_L t4, THREAD_SAVEDCTX_S1(tp)
+  REG_L a0, THREAD_SAVEDCTX_S0(tp)
   jr t4
 0:
-  REG_L s0, THREAD_SAVEDCTX_S0(a0)
-  REG_L s1, THREAD_SAVEDCTX_S1(a0)
-  REG_L s2, THREAD_SAVEDCTX_S2(a0)
-  REG_L s3, THREAD_SAVEDCTX_S3(a0)
-  REG_L s4, THREAD_SAVEDCTX_S4(a0)
-  REG_L s5, THREAD_SAVEDCTX_S5(a0)
-  REG_L s6, THREAD_SAVEDCTX_S6(a0)
-  REG_L s7, THREAD_SAVEDCTX_S7(a0)
-  REG_L s8, THREAD_SAVEDCTX_S8(a0)
-  REG_L s9, THREAD_SAVEDCTX_S9(a0)
-  REG_L s10, THREAD_SAVEDCTX_S10(a0)
-  REG_L s11, THREAD_SAVEDCTX_S11(a0)
+  REG_L s0, THREAD_SAVEDCTX_S0(tp)
+  REG_L s1, THREAD_SAVEDCTX_S1(tp)
+  REG_L s2, THREAD_SAVEDCTX_S2(tp)
+  REG_L s3, THREAD_SAVEDCTX_S3(tp)
+  REG_L s4, THREAD_SAVEDCTX_S4(tp)
+  REG_L s5, THREAD_SAVEDCTX_S5(tp)
+  REG_L s6, THREAD_SAVEDCTX_S6(tp)
+  REG_L s7, THREAD_SAVEDCTX_S7(tp)
+  REG_L s8, THREAD_SAVEDCTX_S8(tp)
+  REG_L s9, THREAD_SAVEDCTX_S9(tp)
+  REG_L s10, THREAD_SAVEDCTX_S10(tp)
+  REG_L s11, THREAD_SAVEDCTX_S11(tp)
   ret
 
   .size __switchctx, .-__switchctx
@@ -409,7 +398,7 @@ __switchctx:
   .size   __heap_end, SZREG
 
 
-  .section ".tdata.thread_cur"
+  .section ".tdata._thread_cur"
   .p2align LGREG
-  .global _thread_cur; _thread_cur: LITWORD 0
-  .size   _thread_cur, SZREG
+  .global _thread_cur; _thread_cur: .skip THREAD_STRUCT_SIZE
+  .size   _thread_cur, THREAD_STRUCT_SIZE

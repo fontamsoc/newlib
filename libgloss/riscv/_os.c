@@ -728,13 +728,12 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 			_oops();
 		stacksz = malloc_usable_size(stack);
 	}
-	_thread_t *thrd = ((stack + stacksz) - sizeof(_thread_t));
 	extern char __tdata_start[], __tdata_end[], __tbss_start[], __tbss_end[];
-	void* tp = ((void *)thrd - (__tbss_end - __tdata_start));
+	void* tp = ((stack + stacksz) - (__tbss_end - __tdata_start));
 	uintptr_t tdatasz = (__tdata_end - __tdata_start);
 	memcpy (tp, __tdata_start, tdatasz);
 	memset ((tp + tdatasz), 0, (__tbss_end - __tbss_start));
-	*(_thread_t **)tp = thrd;
+	_thread_t *thrd = (tp - sizeof(_thread_t));
 	_dlist_clr(&thrd->l);
 	thrd->state = _THREAD_STOPPED;
 	thrd->wq = 0;
@@ -743,8 +742,8 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 	thrd->stack = (is_stack_given ? 0 : stack);
 	thrd->cpu = -(_cpuid() + 1); // Negate to signal __switchctx().
 	thrd->savedctx.ra = (uintptr_t)_thread_exit;
-	thrd->savedctx.sp = (uintptr_t)tp;
-	thrd->savedctx.tp = (uintptr_t)tp;
+	thrd->savedctx.sp = (uintptr_t)thrd;
+	thrd->savedctx.tp = (uintptr_t)thrd;
 	thrd->savedctx.s0 = (uintptr_t)arg;
 	thrd->savedctx.s1 = (uintptr_t)entry;
 	thrd->savedctx.scratch = 0;
@@ -870,7 +869,7 @@ void _thread_dispose (_thread_t *thrd) {
 // Put _thread_cur on _waitq_t if wq is non-null.
 void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 	_preempt_disable();
-	_thread_t *nxtthrd, *thrd = _thread_cur;
+	_thread_t *nxtthrd, *thrd = (&_thread_cur);
 	if (e != _DATE_MAX)
 		_timer_arm(&thrd->z, e);
 	uintptr_t cpu = thrd->cpu;
@@ -1014,7 +1013,7 @@ static void __timer_preempt (_timer_t *) {
 	__runq[cpu].l = container_of(nxtthrd->l.next, _thread_t, l);
 	__runq[cpu].cur = nxtthrd;
 	_xchg(&__runq[cpu].lock, 0);
-	if (!_tpval() || nxtthrd != _thread_cur) {
+	if (!_tpval() || nxtthrd != (&_thread_cur)) {
 		if (__runq[cpu].cnt > 1) {
 			_date_t scheddate = _clkcycles();
 			if (nxtthrd->ts) {
@@ -1035,7 +1034,7 @@ static void __timer_preempt (_timer_t *) {
 // Terminate _thread_cur by calling _thread_stop() on it and preparing it for _thread_dispose().
 // _thread_sched() or _thread_schedoncpu() can no longer resume the thread.
 void _thread_exit (void) {
-	_thread_kill(_thread_cur);
+	_thread_kill(&_thread_cur);
 	_thread_yield();
 }
 
