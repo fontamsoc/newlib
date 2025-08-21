@@ -685,7 +685,6 @@ void __init_multithreading (_thread_t *thrd) {
 	thrd->ts = 0;
 	thrd->stack = 0;
 	thrd->cpu = 0;
-	thrd->savedctx.tp = (uintptr_t)_tpval();
 	_irq_init(&__ipi, -1, __ipi_preempt);
 	_irq_register(&__ipi);
 	__ncpu += 1;
@@ -743,7 +742,6 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 	thrd->cpu = -(_cpuid() + 1); // Negate to signal __switchctx().
 	thrd->savedctx.ra = (uintptr_t)_thread_exit;
 	thrd->savedctx.sp = (uintptr_t)thrd;
-	thrd->savedctx.tp = (uintptr_t)thrd;
 	thrd->savedctx.s0 = (uintptr_t)arg;
 	thrd->savedctx.s1 = (uintptr_t)entry;
 	thrd->savedctx.scratch = 0;
@@ -762,7 +760,7 @@ void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 	// it would not be useable in a trap handling.
 	// The thread being moved cannot be _thread_cur (ie: __runq[_cpuid()].cur),
 	// because it needs its resume context to already have been saved.
-	if (thrd == __runq[_cpuid()].cur || !thrd->savedctx.tp || cpu >= __ncpu)
+	if (thrd == __runq[_cpuid()].cur || !thrd->savedctx.sp || cpu >= __ncpu)
 		_oops();
 	if (thrd->wq)
 		__thread_removefromwq(thrd);
@@ -852,7 +850,7 @@ void _thread_stop (_thread_t *thrd) {
 // _thread_sched() or _thread_schedoncpu() can no longer resume the thread.
 void _thread_kill (_thread_t *thrd) {
 	_thread_stop(thrd);
-	thrd->savedctx.tp = 0;
+	thrd->savedctx.sp = 0; // Set null to signal terminated.
 }
 
 // Free memory used by a terminated _thread_t returned by _thread_create().

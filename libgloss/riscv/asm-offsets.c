@@ -23,8 +23,6 @@
 void main (void) {
 	OFFSET(TRAP_SAVEDCTX_RA,  _trap_savedctx_t, ra);
 	OFFSET(TRAP_SAVEDCTX_SP,  _trap_savedctx_t, sp);
-	OFFSET(TRAP_SAVEDCTX_GP,  _trap_savedctx_t, gp);
-	OFFSET(TRAP_SAVEDCTX_TP,  _trap_savedctx_t, tp);
 	OFFSET(TRAP_SAVEDCTX_T0,  _trap_savedctx_t, t0);
 	OFFSET(TRAP_SAVEDCTX_T1,  _trap_savedctx_t, t1);
 	OFFSET(TRAP_SAVEDCTX_T2,  _trap_savedctx_t, t2);
@@ -70,7 +68,6 @@ void main (void) {
 
 	OFFSET(THREAD_SAVEDCTX_RA,  _thread_t, savedctx.ra);
 	OFFSET(THREAD_SAVEDCTX_SP,  _thread_t, savedctx.sp);
-	OFFSET(THREAD_SAVEDCTX_TP,  _thread_t, savedctx.tp);
 	OFFSET(THREAD_SAVEDCTX_S0,  _thread_t, savedctx.s0);
 	OFFSET(THREAD_SAVEDCTX_S1,  _thread_t, savedctx.s1);
 	OFFSET(THREAD_SAVEDCTX_S2,  _thread_t, savedctx.s2);

@@ -151,7 +151,7 @@ __trap:
   beqz tp, 0f
 
   REG_S ra, TRAP_SAVEDCTX_RA(sp)
-  /* sp is saved later; gp tp are kept as-is */
+  /* sp is saved later */
   REG_S t0, TRAP_SAVEDCTX_T0(sp)
   REG_S t1, TRAP_SAVEDCTX_T1(sp)
   REG_S t2, TRAP_SAVEDCTX_T2(sp)
@@ -237,7 +237,7 @@ __trap_ret: # Label used from __switchctx().
   beqz tp, 0f
 
   REG_L ra, TRAP_SAVEDCTX_RA(sp)
-  /* sp is restored later; gp tp are kept as-is */
+  /* sp is restored later */
   REG_L t0, TRAP_SAVEDCTX_T0(sp)
   REG_L t1, TRAP_SAVEDCTX_T1(sp)
   REG_L t2, TRAP_SAVEDCTX_T2(sp)
@@ -293,8 +293,6 @@ __switchctx:
 
   REG_S ra, THREAD_SAVEDCTX_RA(tp)
   REG_S sp, THREAD_SAVEDCTX_SP(tp)
-  /* THREAD_SAVEDCTX_TP is written only at creation,
-     and used for signalling termination when set null */
   REG_S s0, THREAD_SAVEDCTX_S0(tp)
   REG_S s1, THREAD_SAVEDCTX_S1(tp)
   REG_S s2, THREAD_SAVEDCTX_S2(tp)
@@ -321,7 +319,7 @@ __switchctx:
   csrs mstatus, 0x8 /* Set mstatus.mie to enable IRQs */
   wfi
 0:
-  mv tp, a0 /* No need to load from THREAD_SAVEDCTX_TP */
+  mv tp, a0
 
   REG_L t1, THREAD_SAVEDCTX_SCRATCH(tp)
   /* If the thread mscratch is non-null, restore from trap context */

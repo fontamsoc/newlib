@@ -172,10 +172,10 @@ typedef struct {
 	void *stack; // Start of the stack.
 	uintptr_t cpu; // Used by _thread_sched() to index the __runq to use.
 	struct {
-		uintptr_t ra, sp, tp;
+		uintptr_t ra, sp;
 		uintptr_t s0, s1, s2, s3, s4, s5;
 		uintptr_t s6, s7, s8, s9, s10, s11;
-		uintptr_t scratch; // Only scratch and tp are valid if handling a trap.
+		uintptr_t scratch; // When non-null, the saved context it points-to must be used instead.
 		uintptr_t status;
 	} savedctx; // Save area for context switching.
 } _thread_t; // Its size must be a multiple of sizeof(uintptr_t).
@@ -183,12 +183,12 @@ typedef struct {
 extern __thread _thread_t _thread_cur;
 
 typedef struct {
-	uintptr_t ra, sp, gp, tp;
+	uintptr_t ra, sp;
 	uintptr_t t0, t1, t2, s0, s1;
 	uintptr_t a0, a1, a2, a3, a4, a5, a6, a7;
 	uintptr_t s2, s3, s4, s5, s6, s7, s8, s9;
 	uintptr_t s10, s11, t3, t4, t5, t6;
-	// Above valid only when interrupting a thread; ie: register tp non-null.
+	// Above valid only when interrupting a thread.
 	uintptr_t scratch, status, epc;
 	uintptr_t tval, tval2, cause;
 	_date_t cycle;
@@ -276,7 +276,7 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e);
 void _thread_exit (void);
 
 #define _is_thread_stopped(X) ((X)->state == _THREAD_STOPPED)
-#define _is_thread_terminated(X) (_is_thread_stopped(X) && (X)->savedctx.tp == 0)
+#define _is_thread_terminated(X) (_is_thread_stopped(X) && !(X)->savedctx.sp)
 #define _is_thread_running(X) ((X)->state == _THREAD_RUNNING)
 
 void _schedlr_freq (uintptr_t cpu, uintptr_t cycles);
