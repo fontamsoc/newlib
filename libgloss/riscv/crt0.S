@@ -276,12 +276,11 @@ __trap_ret: # Label used from __switchctx().
 
 
   .text
+  /* void __switchctx (_thread_t *to) */
+  /* WARNING: Must be called with IRQs disabled */
   .global __switchctx
   .type   __switchctx, @function
 __switchctx:
-
-  /* void __switchctx (_thread_t *to) */
-  /* WARNING: Must be called with IRQs disabled */
 
   beqz tp, 0f
 
