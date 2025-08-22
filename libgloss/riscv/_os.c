@@ -328,9 +328,9 @@ uintptr_t _mutex_lock (_mutex_t *m, _date_t timeout) {
 		while (_xchg(&m->lock, 1));
 		if (m->acqcnt) {
 			if (!m->waitq.l)
-				_atomic_inc(&m->waitq.p);
+				m->waitq.p = 1;
 			_xchg(&m->lock, 0);
-			// m->waitq.p gets incremented to avoid a race condition
+			// m->waitq.p gets set non-null to avoid a race condition
 			// after unlocking m->lock with m->acqcnt becoming null,
 			// when _thread_schedone(&m->waitq) is called by another thread
 			// _mutex_unlock() on another CPU while current thread is here
@@ -441,9 +441,9 @@ size_t _fifo_put (_fifo_t *f, void *buf, size_t sz, _date_t timeout) {
 			if (timeout != _DATE_MAX)
 				sleepstart = _clkcycles();
 			if (!f->wwaitq.l)
-				_atomic_inc(&f->wwaitq.p);
+				f->wwaitq.p = 1;
 			_xchg(&f->lock, 0);
-			// f->wwaitq.p gets incremented to avoid a race condition in a
+			// f->wwaitq.p gets set non-null to avoid a race condition in a
 			// similar manner that it is done and explained in _mutex_lock().
 			_thread_sleeponwq(&f->wwaitq, timeout);
 			if (timeout != _DATE_MAX)
@@ -529,9 +529,9 @@ size_t _fifo_get (_fifo_t *f, void *buf, size_t sz, bool peek, _date_t timeout) 
 			if (timeout != _DATE_MAX)
 				sleepstart = _clkcycles();
 			if (!f->rwaitq.l)
-				_atomic_inc(&f->rwaitq.p);
+				f->rwaitq.p = 1;
 			_xchg(&f->lock, 0);
-			// f->rwaitq.p gets incremented to avoid a race condition in a
+			// f->rwaitq.p gets set non-null to avoid a race condition in a
 			// similar manner that it is done and explained in _mutex_lock().
 			_thread_sleeponwq(&f->rwaitq, timeout);
 			if (timeout != _DATE_MAX)
@@ -923,7 +923,7 @@ void _thread_schedone (_waitq_t *wq) {
 	if (wq->p) { // Avoid a race condition until wq->l is true.
 		while (!wq->l)
 			asm volatile("" ::: "memory");
-		_atomic_dec(&wq->p);
+		wq->p = 0;
 		goto wq_l_true;
 	}
 	if (wq->l) {
@@ -941,7 +941,7 @@ void _thread_schedall (_waitq_t *wq) {
 	if (wq->p) { // Avoid a race condition until wq->l is true.
 		while (!wq->l)
 			asm volatile("" ::: "memory");
-		_atomic_dec(&wq->p);
+		wq->p = 0;
 		goto wq_l_true;
 	}
 	while (wq->l) {
