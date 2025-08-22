@@ -180,7 +180,7 @@ typedef struct {
 	} savedctx; // Save area for context switching.
 } _thread_t; // Its size must be a multiple of sizeof(uintptr_t).
 
-extern __thread _thread_t _thread_cur;
+register _thread_t *_thread_cur __asm__ ("tp");
 
 typedef struct {
 	uintptr_t ra, sp;
@@ -208,11 +208,6 @@ typedef struct {
 #define _clkfreq() ({ \
 	uintptr_t x; \
 	__asm__ __volatile__ ("csrr %0, 0xcc0\n" : "=r"(x) :: "memory"); \
-	x; })
-
-#define _tpval() ({ \
-	void *x; \
-	__asm__ __volatile__ ("mv %0, tp\n" : "=r"(x) :: "memory"); \
 	x; })
 
 // Print diagnosis info and shutdown.

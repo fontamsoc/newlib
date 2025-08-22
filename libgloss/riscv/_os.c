@@ -373,21 +373,21 @@ void _mutex_unlock (_mutex_t *m) {
 }
 
 uintptr_t _mutex_lock_recursive (_mutex_t *m, _date_t timeout) {
-	if (m->owner == _tpval()) {
+	if (m->owner == _thread_cur) {
 		if (m->acqcnt == -1)
 			_oops();
 		++m->acqcnt;
 		return 1;
 	}
 	if (_mutex_lock(m, timeout)) {
-		m->owner = _tpval();
+		m->owner = _thread_cur;
 		return 1;
 	}
 	return 0;
 }
 
 void _mutex_unlock_recursive (_mutex_t *m) {
-	if (m->owner != _tpval())
+	if (m->owner != _thread_cur)
 		_oops();
 	if (m->acqcnt > 1) {
 		--m->acqcnt;
@@ -756,11 +756,9 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 // Note that it does not preempt _thread_cur.
 void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 	_preempt_disable();
-	// _thread_cur is not used in this function, otherwise
-	// it would not be useable in a trap handling.
-	// The thread being moved cannot be _thread_cur (ie: __runq[_cpuid()].cur),
-	// because it needs its resume context to already have been saved.
-	if (thrd == __runq[_cpuid()].cur || !thrd->savedctx.sp || cpu >= __ncpu)
+	// The thread being moved cannot be _thread_cur, because it needs
+	// its resume context to already have been saved.
+	if (thrd == _thread_cur || !thrd->savedctx.sp || cpu >= __ncpu)
 		_oops();
 	if (thrd->wq)
 		__thread_removefromwq(thrd);
@@ -867,7 +865,7 @@ void _thread_dispose (_thread_t *thrd) {
 // Put _thread_cur on _waitq_t if wq is non-null.
 void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 	_preempt_disable();
-	_thread_t *nxtthrd, *thrd = (&_thread_cur);
+	_thread_t *nxtthrd, *thrd = _thread_cur;
 	if (e != _DATE_MAX)
 		_timer_arm(&thrd->z, e);
 	uintptr_t cpu = thrd->cpu;
@@ -1011,7 +1009,7 @@ static void __timer_preempt (_timer_t *) {
 	__runq[cpu].l = container_of(nxtthrd->l.next, _thread_t, l);
 	__runq[cpu].cur = nxtthrd;
 	_xchg(&__runq[cpu].lock, 0);
-	if (!_tpval() || nxtthrd != (&_thread_cur)) {
+	if (nxtthrd != _thread_cur) {
 		if (__runq[cpu].cnt > 1) {
 			_date_t scheddate = _clkcycles();
 			if (nxtthrd->ts) {
@@ -1032,7 +1030,7 @@ static void __timer_preempt (_timer_t *) {
 // Terminate _thread_cur by calling _thread_stop() on it and preparing it for _thread_dispose().
 // _thread_sched() or _thread_schedoncpu() can no longer resume the thread.
 void _thread_exit (void) {
-	_thread_kill(&_thread_cur);
+	_thread_kill(_thread_cur);
 	_thread_yield();
 }
 

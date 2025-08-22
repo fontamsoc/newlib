@@ -84,7 +84,7 @@ _start:
   # | Stack Data           |
   # ------------------------ <- Stack pointer when calling main().
   # | TLS Data             |
-  # | _thread_cur is first |
+  # | _thread_t is first   |
   # ------------------------ End of stack.
 
   # Init TLS.
@@ -396,7 +396,7 @@ __switchctx:
   .size   __heap_end, SZREG
 
 
-  .section ".tdata._thread_cur"
+  .section ".tdata.__thread_cur"
   .p2align LGREG
-  .global _thread_cur; _thread_cur: .skip THREAD_STRUCT_SIZE
-  .size   _thread_cur, THREAD_STRUCT_SIZE
+  .global __thread_cur; __thread_cur: .skip THREAD_STRUCT_SIZE
+  .size   __thread_cur, THREAD_STRUCT_SIZE
