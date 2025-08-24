@@ -148,8 +148,14 @@ __trap:
 
   addi  sp, sp, -TRAP_SAVEDCTX_SIZE
 
-  beqz tp, 0f
-
+  bnez tp, 1f
+  csrrw t1, mscratch, t1 /* mscratch is non-null if interrupting the handling of a trap */
+  bnez t1, 0f
+  csrw mscratch, x0
+  j 2f
+0:
+  csrrw t1, mscratch, t1 /* restore t1 and mscratch */
+1:
   REG_S ra, TRAP_SAVEDCTX_RA(sp)
   /* sp is saved later */
   REG_S t0, TRAP_SAVEDCTX_T0(sp)
@@ -182,8 +188,9 @@ __trap:
 
   addi  t0, sp, TRAP_SAVEDCTX_SIZE
   REG_S t0, TRAP_SAVEDCTX_SP(sp)
-0:
+
   csrr  t1, mscratch
+2:
   csrr  t2, mstatus
   csrr  t3, mepc
   csrr  t4, mtval
@@ -234,8 +241,9 @@ __trap_ret: # Label used from __switchctx().
   REG_L t1, TRAP_SAVEDCTX_SCRATCH(sp)
   csrw mscratch, t1
 
-  beqz tp, 0f
-
+  bnez tp, 0f
+  beqz t1, 1f
+0:
   REG_L ra, TRAP_SAVEDCTX_RA(sp)
   /* sp is restored later */
   REG_L t0, TRAP_SAVEDCTX_T0(sp)
@@ -267,7 +275,7 @@ __trap_ret: # Label used from __switchctx().
   REG_L t6, TRAP_SAVEDCTX_T6(sp)
   REG_L sp, TRAP_SAVEDCTX_SP(sp)
   mret
-0:
+1:
   addi sp, sp, TRAP_SAVEDCTX_SIZE
   csrs mstatus, 0x8 /* Set mstatus.mie to enable IRQs */
   wfi
