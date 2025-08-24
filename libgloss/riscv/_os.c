@@ -288,15 +288,15 @@ bool __trap_irq (void) {
 						__timer_list[coreid] = container_of(t->l.next, _timer_t, l);
 						__settimecmp(__timer_list[coreid]->e);
 						_dlist_del(t->l.prev, t->l.next);
-					} else
+					} else {
 						__timer_list[coreid] = 0;
+						__asm__ __volatile__ ("csrc mie, %0\n" :: "r"(0x80) : "memory"); // Clear mie.mtie.
+					}
 					_dlist_clr(&t->l);
 					t->f(t);
 				} else
 					break;
 			}
-			if (!__timer_list[coreid])
-				__asm__ __volatile__ ("csrc mie, %0\n" :: "r"(0x80) : "memory"); // Clear mie.mtie.
 			break;
 		case (11 /* Machine External */ | (1<<(__riscv_xlen-1))):
 			while (_xchg(&__irqs.lock, 1));
