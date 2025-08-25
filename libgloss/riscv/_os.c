@@ -686,6 +686,7 @@ void __init_multithreading (_thread_t *thrd) {
 	thrd->ts = 0;
 	thrd->stack = 0;
 	thrd->cpu = 0;
+	thrd->savedctx.sp = (uintptr_t)thrd; // Set so thread is not seen as terminated.
 	_irq_init(&__ipi, -1, __ipi_preempt);
 	_irq_register(&__ipi);
 	__ncpu += 1;
@@ -760,7 +761,7 @@ void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 	_preempt_disable();
 	// The thread being moved cannot be _thread_cur, because it needs
 	// its resume context to already have been saved.
-	if (thrd == _thread_cur || !thrd->savedctx.sp || cpu >= __ncpu)
+	if (thrd == _thread_cur || _is_thread_terminated(thrd) || cpu >= __ncpu)
 		_oops();
 	if (thrd->wq)
 		__thread_removefromwq(thrd);
@@ -956,18 +957,11 @@ void _thread_schedall (_waitq_t *wq) {
 	_preempt_enable();
 }
 
-// Preempt thread currently running on a cpu.
-void _thread_preempt (uintptr_t cpu) {
-	_preempt_disable();
-	if (cpu >= __ncpu)
-		_oops();
-	if (cpu != _cpuid()) {
-		// Send IPI to preempt thread running on the CPU.
-		__irq_ipi(cpu);
-		// No need to wait, because it could still
-		// be the same thread running on the CPU.
-		_preempt_enable();
-		return;
+static void __thread_cur_preempt (uintptr_t cpu) {
+	void ___switchctx (_thread_t *to) {
+		if (_thread_cur && _is_thread_terminated(_thread_cur))
+			__asm__ __volatile__ ("li tp, 0\n" ::: "memory");
+		__switchctx(to);
 	}
 	struct __runq *runq = &__runq[cpu];
 	while (_xchg(&runq->lock, 1));
@@ -975,43 +969,7 @@ void _thread_preempt (uintptr_t cpu) {
 	if (!nxtthrd) {
 		runq->cur = 0;
 		_xchg(&runq->lock, 0);
-		__switchctx(0); // Will halt.
-		goto done;
-	}
-	runq->l = container_of(nxtthrd->l.next, _thread_t, l);
-	_thread_t *curthrd = (_thread_t *)runq->cur;
-	runq->cur = nxtthrd;
-	_xchg(&runq->lock, 0);
-	if (nxtthrd != curthrd) {
-		if (runq->cnt > 1) {
-			_date_t scheddate = _clkcycles();
-			if (nxtthrd->ts) {
-				scheddate += nxtthrd->ts;
-				nxtthrd->ts = 0;
-			} else
-				scheddate += (schedlrhz[cpu] / runq->cnt);
-			_timer_arm(&runq->schedlr, scheddate);
-			runq->scheddate = scheddate;
-		} else
-			runq->scheddate = 0;
-		__switchctx(nxtthrd);
-	} else
-		runq->scheddate = 0;
-	done:
-	_preempt_enable();
-}
-
-// Callback for scheduled preemption of _thread_cur.
-static void __timer_preempt (_timer_t *) {
-	// IRQs are disabled since this function runs in a trap handling.
-	uintptr_t cpu = _cpuid();
-	struct __runq *runq = &__runq[cpu];
-	while (_xchg(&runq->lock, 1));
-	_thread_t *nxtthrd = runq->l;
-	if (!nxtthrd) {
-		runq->cur = 0;
-		_xchg(&runq->lock, 0);
-		__switchctx(0); // Will halt.
+		___switchctx(0);
 		goto done;
 	}
 	runq->l = container_of(nxtthrd->l.next, _thread_t, l);
@@ -1029,10 +987,33 @@ static void __timer_preempt (_timer_t *) {
 			runq->scheddate = scheddate;
 		} else
 			runq->scheddate = 0;
-		__switchctx(nxtthrd);
+		___switchctx(nxtthrd);
 	} else
 		runq->scheddate = 0;
 	done:;
+}
+
+// Preempt thread currently running on a cpu.
+void _thread_preempt (uintptr_t cpu) {
+	_preempt_disable();
+	if (cpu >= __ncpu)
+		_oops();
+	if (cpu != _cpuid()) {
+		// Send IPI to preempt thread running on the CPU.
+		__irq_ipi(cpu);
+		// No need to wait, because it could still
+		// be the same thread running on the CPU.
+		_preempt_enable();
+		return;
+	}
+	__thread_cur_preempt(cpu);
+	_preempt_enable();
+}
+
+// Callback for scheduled preemption of _thread_cur.
+static void __timer_preempt (_timer_t *) {
+	// IRQs are disabled since this function runs in a trap handling.
+	__thread_cur_preempt(_cpuid());
 }
 
 // Terminate _thread_cur by calling _thread_stop() on it and preparing it for _thread_dispose().

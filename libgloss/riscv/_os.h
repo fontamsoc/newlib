@@ -271,7 +271,7 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e);
 void _thread_exit (void);
 
 #define _is_thread_stopped(X) ((X)->state == _THREAD_STOPPED)
-#define _is_thread_terminated(X) (_is_thread_stopped(X) && !(X)->savedctx.sp)
+#define _is_thread_terminated(X) (/*_is_thread_stopped(X) &&*/ !(X)->savedctx.sp)
 #define _is_thread_running(X) ((X)->state == _THREAD_RUNNING)
 
 void _schedlr_freq (uintptr_t cpu, uintptr_t cycles);
