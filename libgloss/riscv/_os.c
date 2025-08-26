@@ -959,7 +959,9 @@ void _thread_schedall (_waitq_t *wq) {
 
 static void __thread_cur_preempt (uintptr_t cpu) {
 	void ___switchctx (_thread_t *to) {
-		if (_thread_cur && _is_thread_terminated(_thread_cur))
+		if (!_thread_cur)
+			__asm__ __volatile__ ("csrw mscratch, x0\n" ::: "memory");
+		else if (_is_thread_terminated(_thread_cur))
 			__asm__ __volatile__ ("li tp, 0\n" ::: "memory");
 		__switchctx(to);
 	}
