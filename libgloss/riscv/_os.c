@@ -871,22 +871,24 @@ void _thread_dispose (_thread_t *thrd) {
 // Put _thread_cur on _waitq_t if wq is non-null.
 void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 	_preempt_disable();
-	_thread_t *nxtthrd, *thrd = _thread_cur;
+	if (!_thread_cur)
+		_oops();
+	_thread_t *nxtthrd;
 	if (e != _DATE_MAX)
-		_timer_arm(&thrd->z, e);
-	uintptr_t cpu = thrd->cpu;
+		_timer_arm(&_thread_cur->z, e);
+	uintptr_t cpu = _thread_cur->cpu;
 	if (cpu != _cpuid())
 		_oops();
 	struct __runq *runq = &__runq[cpu];
 	while (_xchg(&runq->lock, 1));
-	if (thrd->l.next != &thrd->l) {
-		if (thrd == runq->l)
+	if (_thread_cur->l.next != &_thread_cur->l) {
+		if (_thread_cur == runq->l)
 			_oops(); // runq->l should be pointing to the next _thread_t and not _thread_cur.
 		nxtthrd = runq->l;
-		_dlist_del(thrd->l.prev, thrd->l.next);
+		_dlist_del(_thread_cur->l.prev, _thread_cur->l.next);
 		runq->l = container_of(nxtthrd->l.next, _thread_t, l);
 	} else {
-		if (thrd != runq->l)
+		if (_thread_cur != runq->l)
 			_oops();
 		nxtthrd = 0;
 		runq->l = 0;
@@ -894,19 +896,19 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 	runq->cnt -= 1;
 	runq->cur = nxtthrd;
 	_xchg(&runq->lock, 0);
-	thrd->state = _THREAD_STOPPED;
+	_thread_cur->state = _THREAD_STOPPED;
 	if (wq) {
 		while (_xchg(&wq->lock, 1));
 		if (wq->l)
-			_dlist_add(&thrd->l, ((_thread_t *)wq->l)->l.prev, &((_thread_t *)wq->l)->l);
+			_dlist_add(&_thread_cur->l, ((_thread_t *)wq->l)->l.prev, &((_thread_t *)wq->l)->l);
 		else {
-			_dlist_init(&thrd->l);
-			wq->l = thrd;
+			_dlist_init(&_thread_cur->l);
+			wq->l = _thread_cur;
 		}
 		_xchg(&wq->lock, 0);
-		thrd->wq = wq;
+		_thread_cur->wq = wq;
 	} else
-		_dlist_clr(&thrd->l);
+		_dlist_clr(&_thread_cur->l);
 	if (runq->cnt > 1) {
 		_date_t scheddate = _clkcycles();
 		if (nxtthrd->ts) {
