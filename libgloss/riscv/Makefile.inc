@@ -76,10 +76,6 @@ multilibtool_LIBRARIES += %D%/libgloss.a
 	%D%/lock.c \
 	%D%/_os.c
 
-multilibtool_LIBRARIES += %D%/libsim.a
-%C%_libsim_a_CPPFLAGS = $(%C%_libgloss_a_CPPFLAGS) -DUSING_SIM_SPECS
-%C%_libsim_a_SOURCES = $(%C%_libgloss_a_SOURCES)
-
 includetool_DATA += %D%/_os.h
 
 includemachinetooldir = $(tooldir)/include/machine
