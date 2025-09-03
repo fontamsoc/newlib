@@ -35,6 +35,16 @@ static void __printstrn (char *s, size_t sz) {
 	for (; sz > 0; --sz, ++s)
 		*(volatile char *)SERIAL0_ADDR = *s;
 }
+__attribute__((weak)) uintptr_t _stdin_echo = 0; // Set non-null for echoing.
+static char __getchar (void) {
+	char c = *(volatile char *)SERIAL0_ADDR;
+	if (_stdin_echo) {
+		*(volatile char *)SERIAL0_ADDR = c;
+		if (c == '\r')
+			*(volatile char *)SERIAL0_ADDR = '\n';
+	}
+	return c;
+}
 
 uint8_t __trap_stacks[NCPU][TRAP_STACK_SIZE];
 
@@ -51,16 +61,11 @@ bool __trap_exc_ecall_m (void) {
 			break;
 		case SYS_read:
 			if (savedctx->a0 == 0) {
-				char *ptr = (char *)savedctx->a1;
-				if (savedctx->a2 > 0) { //for (int i = savedctx->a2; i > 0; --i, ++ptr)
-					*ptr = *(volatile char *)SERIAL0_ADDR;
-					if (0) { // Do this for echoing ...
-						*(volatile char *)SERIAL0_ADDR = *ptr;
-						if (*ptr == '\r')
-							*(volatile char *)SERIAL0_ADDR = '\n';
-					}
-				}
-				savedctx->a0 = 1; //savedctx->a2;
+				if (savedctx->a2 > 0) {
+					*(char *)savedctx->a1 = __getchar();
+					savedctx->a0 = 1;
+				} else
+					savedctx->a0 = 0;
 			} else
 				savedctx->a0 = -1;
 			break;
