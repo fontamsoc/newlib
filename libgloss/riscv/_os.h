@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-// 20241203 (c) William Fonkou Tambe
+// 20250907 (c) William Fonkou Tambe
 
 #ifndef __LIBGLOSS_RISCV__OS_H
 #define __LIBGLOSS_RISCV__OS_H
@@ -168,7 +168,6 @@ typedef struct {
 	_waitq_t *wq; // Non-null when state is _THREAD_STOPPED.
 	              // Can also be null while state is _THREAD_STOPPED.
 	_timer_t z; // Used to make the thread sleep for a duration.
-	_date_t ts; // When non-null, it is used to set how long the thread has left to run.
 	void *stack; // Start of the stack.
 	uintptr_t cpu; // Used by _thread_sched() to index the __runq to use.
 	struct {

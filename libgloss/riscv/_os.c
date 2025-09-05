@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-// 20241203 (c) William Fonkou Tambe
+// 20250907 (c) William Fonkou Tambe
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -651,8 +651,9 @@ static void __thread_wakeup (_timer_t *t) {
 	while (_xchg(&runq->lock, 1));
 	_thread_t *curthrd = (_thread_t *)runq->cur;
 	if (curthrd) {
-		_dlist_add(&thrd->l, curthrd->l.prev, &curthrd->l);
-		runq->l = curthrd;
+		_thread_t *nxtthrd = container_of(curthrd->l.next, _thread_t, l);
+		_dlist_add(&thrd->l, nxtthrd->l.prev, &nxtthrd->l);
+		runq->l = nxtthrd;
 	} else {
 		_dlist_init(&thrd->l);
 		runq->l = thrd;
@@ -661,15 +662,12 @@ static void __thread_wakeup (_timer_t *t) {
 	thrd->state = _THREAD_RUNNING;
 	runq->cur = thrd;
 	_xchg(&runq->lock, 0);
-	_date_t scheddate, curscheddate = runq->scheddate;
 	if (runq->cnt > 1) {
-		scheddate = (_clkcycles() + (schedlrhz[cpu] / runq->cnt));
+		_date_t scheddate = (_clkcycles() + (schedlrhz[cpu] / runq->cnt));
 		_timer_arm(&runq->schedlr, scheddate);
 		runq->scheddate = scheddate;
 	} else
 		runq->scheddate = 0;
-	if (curthrd && curscheddate && curscheddate < scheddate)
-		curthrd->ts = (curscheddate - _trap_savedctx()->cycle);
 	__switchctx(thrd);
 }
 
@@ -688,7 +686,6 @@ void __init_multithreading (_thread_t *thrd) {
 	thrd->state = _THREAD_RUNNING;
 	thrd->wq = 0;
 	_timer_init(&thrd->z, __thread_wakeup);
-	thrd->ts = 0;
 	thrd->stack = 0;
 	thrd->cpu = 0;
 	thrd->savedctx.sp = (uintptr_t)thrd; // Set so thread is not seen as terminated.
@@ -745,7 +742,6 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 	thrd->state = _THREAD_STOPPED;
 	thrd->wq = 0;
 	_timer_init(&thrd->z, __thread_wakeup);
-	thrd->ts = 0;
 	thrd->stack = (is_stack_given ? 0 : stack);
 	thrd->cpu = -(_cpuid() + 1); // Negate to signal __switchctx().
 	thrd->savedctx.ra = (uintptr_t)_thread_exit;
@@ -915,12 +911,7 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 	} else
 		_dlist_clr(&_thread_cur->l);
 	if (runq->cnt > 1) {
-		_date_t scheddate = _clkcycles();
-		if (nxtthrd->ts) {
-			scheddate += nxtthrd->ts;
-			nxtthrd->ts = 0;
-		} else
-			scheddate += (schedlrhz[cpu] / runq->cnt);
+		_date_t scheddate = (_clkcycles() + (schedlrhz[cpu] / runq->cnt));
 		_timer_arm(&runq->schedlr, scheddate);
 		runq->scheddate = scheddate;
 	} else
@@ -986,12 +977,7 @@ static void __thread_cur_preempt (uintptr_t cpu) {
 	_xchg(&runq->lock, 0);
 	if (nxtthrd != _thread_cur) {
 		if (runq->cnt > 1) {
-			_date_t scheddate = _clkcycles();
-			if (nxtthrd->ts) {
-				scheddate += nxtthrd->ts;
-				nxtthrd->ts = 0;
-			} else
-				scheddate += (schedlrhz[cpu] / runq->cnt);
+			_date_t scheddate = (_clkcycles() + (schedlrhz[cpu] / runq->cnt));
 			_timer_arm(&runq->schedlr, scheddate);
 			runq->scheddate = scheddate;
 		} else
