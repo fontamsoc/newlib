@@ -1,8 +1,10 @@
-#include <machine/syscall.h>
-#include "internal_syscall.h"
+// SPDX-License-Identifier: GPL-2.0-only
+// 20250907 (c) William Fonkou Tambe
 
-/* Permissions of a file (by name) in a given directory.  */
-int _faccessat(int dirfd, const char *file, int mode, int flags)
-{
-  return syscall_errno (SYS_faccessat, 4, dirfd, file, mode, flags, 0, 0);
+#include <errno.h>
+
+// Permissions of a file (by name) in a given directory.
+__attribute__((weak)) int _faccessat (int dirfd, const char *path, int mode, int flags) {
+	errno = EPERM;
+	return -1;
 }

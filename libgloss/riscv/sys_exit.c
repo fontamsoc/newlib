@@ -1,10 +1,8 @@
-#include <machine/syscall.h>
-#include "internal_syscall.h"
+// SPDX-License-Identifier: GPL-2.0-only
+// 20250907 (c) William Fonkou Tambe
 
-/* Exit a program without cleaning up files.  */
-void
-_exit(int exit_status)
-{
-  syscall_errno (SYS_exit, 1, exit_status, 0, 0, 0, 0, 0);
-  while (1);
+// Exit a program without cleaning up files.
+__attribute__((weak)) void _exit (int status) {
+	__asm__ __volatile__ ("csrw mtvec, x0; ebreak\n" ::: "memory");
+	while(1);
 }

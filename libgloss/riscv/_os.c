@@ -31,57 +31,18 @@ static void __printstr (char *s) {
 	for (char c; c = *s; ++s)
 		*(volatile char *)SERIAL0_ADDR = c;
 }
-static void __printstrn (char *s, size_t sz) {
-	for (; sz > 0; --sz, ++s)
-		*(volatile char *)SERIAL0_ADDR = *s;
-}
-__attribute__((weak)) uintptr_t _stdin_echo = 0; // Set non-null for echoing.
-static char __getchar (void) {
-	char c = *(volatile char *)SERIAL0_ADDR;
-	if (_stdin_echo) {
-		*(volatile char *)SERIAL0_ADDR = c;
-		if (c == '\r')
-			*(volatile char *)SERIAL0_ADDR = '\n';
-	}
-	return c;
-}
 
 uint8_t __trap_stacks[NCPU][TRAP_STACK_SIZE];
 
 bool __trap_exc_ecall_m (void) {
 	_trap_savedctx_t *savedctx = _trap_savedctx();
 	switch (savedctx->a7) {
-		case SYS_brk:
-			extern char _end[];
-			extern uintptr_t __heap_ptr;
-			extern uintptr_t __heap_end;
-			if (savedctx->a0 >= (uintptr_t)_end && savedctx->a0 < __heap_end)
-				__heap_ptr = savedctx->a0;
-			savedctx->a0 = __heap_ptr;
-			break;
-		case SYS_read:
-			if (savedctx->a0 == 0) {
-				if (savedctx->a2 > 0) {
-					*(char *)savedctx->a1 = __getchar();
-					savedctx->a0 = 1;
-				} else
-					savedctx->a0 = 0;
-			} else
-				savedctx->a0 = -1;
-			break;
-		case SYS_write:
-			if (savedctx->a0 == 1 || savedctx->a0 == 2) {
-				__printstrn((char *)savedctx->a1, (size_t)savedctx->a2);
-				savedctx->a0 = savedctx->a2;
-			} else
-				savedctx->a0 = -1;
-			break;
 		case -1:
 			__printstr("==== OOPS CPU"); __printdec(_cpuid());
 			__printstr(" 0x"); __printhex(savedctx->epc);
 			__printstr(" ====\n");
-		case SYS_exit:
-			__asm__ __volatile__ ("csrw mtvec, x0; ebreak; 0:; j 0b\n" ::: "memory");
+			__asm__ __volatile__ ("csrw mtvec, x0; ebreak\n" ::: "memory");
+			while(1);
 		default:
 			savedctx->a0 = -1;
 	}
