@@ -578,7 +578,7 @@ static struct __runq {
 
 static uintptr_t schedlrhz[NCPU];
 
-// Set the clock cycles it takes to schedule preempt all threads in a CPU.
+// Set the clock cycle count it takes to run all threads in a CPU runqueue.
 void _schedlr_freq (uintptr_t cpu, uintptr_t cycles) {
 	if (cpu >= __ncpu)
 		_oops();
