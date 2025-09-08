@@ -22,12 +22,12 @@
 		*(volatile char *)SERIAL0_ADDR = \
 			__hexdigit((Ival>>(((8*Isz)-4)-(i*4)))&0xf); \
 })
-static void __printdec (uintptr_t i) {
+__attribute__((noinline)) static void __printdec (uintptr_t i) {
     if (i / 10)
         __printdec(i / 10);
     *(volatile char *)SERIAL0_ADDR = ((i % 10) + '0');
 }
-static void __printstr (char *s) {
+__attribute__((noinline)) static void __printstr (char *s) {
 	for (char c; c = *s; ++s)
 		*(volatile char *)SERIAL0_ADDR = c;
 }
