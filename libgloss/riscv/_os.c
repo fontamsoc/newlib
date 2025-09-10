@@ -665,10 +665,9 @@ void __init_multithreading (_thread_t *thrd) {
 	// TODO: Initialize percpu data here before using them below.
 	// TODO: The number of CPUs needs to be determined here early
 	// TODO: and used to allocated just enough percpu data.
-	struct __runq *runq = &__runq[0];
-	runq->l = thrd;
-	runq->cur = thrd;
-	runq->cnt = 1;
+	__runq[0].l = thrd;
+	__runq[0].cur = thrd;
+	__runq[0].cnt = 1;
 	for (uintptr_t i = 0; i < __ncpu; ++i) {
 		_timer_init(&__runq[i].schedlr, __timer_preempt);
 		schedlrhz[i] = SCHEDLRHZ;
