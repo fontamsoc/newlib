@@ -10,8 +10,8 @@
 #define TRAP_STACK_SIZE (1 << TRAP_STACK_SHIFT)
 
 // Default clock cycle count it takes to run all threads in a CPU runqueue;
-// in other words, a preempted thread is guaranteed to resume in less than SCHEDLRHZ
-// clock cycles. It can be modified at runtime per cpu using _schedlr_freq().
+// in other words, a preempted thread is guaranteed to resume in less than
+// SCHEDLRHZ clock cycles.
 #define SCHEDLRHZ _MSECS(100)
 
 #define SERIAL0_ADDR (0xf80 /* By convention, the first UART is located at 0xf80 */)

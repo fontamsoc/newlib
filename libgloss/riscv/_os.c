@@ -572,14 +572,7 @@ static struct __runq {
 	_timer_t schedlr; // Used for timeslice preemption of _thread_cur.
 } __runq[NCPU] = {[0 ... NCPU-1] = {0, 0, 0, 0, _TIMER_CLR}};
 
-static uintptr_t schedlrhz[NCPU];
-
-// Set the clock cycle count it takes to run all threads in a CPU runqueue.
-void _schedlr_freq (uintptr_t cpu, uintptr_t cycles) {
-	if (cpu >= __ncpu)
-		_oops();
-	schedlrhz[cpu] = cycles;
-}
+static uintptr_t schedlrhz; // Get set to the value of SCHEDLRHZ.
 
 static void __thread_removefromwq (_thread_t *thrd) {
 	while (_xchg(&thrd->wq->lock, 1));
@@ -620,7 +613,7 @@ static void __thread_wakeup (_timer_t *t) {
 	runq->cur = thrd;
 	_xchg(&runq->lock, 0);
 	if (runq->cnt > 1)
-		_timer_arm(&runq->schedlr, (_clkcycles() + (schedlrhz[cpu] / runq->cnt)));
+		_timer_arm(&runq->schedlr, (_clkcycles() + (schedlrhz / runq->cnt)));
 	__switchctx(thrd);
 }
 
@@ -661,10 +654,9 @@ void __init_multithreading (_thread_t *thrd) {
 	__runq[0].l = thrd;
 	__runq[0].cur = thrd;
 	__runq[0].cnt = 1;
-	for (uintptr_t i = 0; i < __ncpu; ++i) {
+	for (uintptr_t i = 0; i < __ncpu; ++i)
 		_timer_init(&__runq[i].schedlr, __timer_preempt);
-		schedlrhz[i] = SCHEDLRHZ;
-	}
+	schedlrhz = SCHEDLRHZ;
 }
 
 // To be used only by _start().
@@ -865,7 +857,7 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 	} else
 		_dlist_clr(&_thread_cur->l);
 	if (runq->cnt > 1)
-		_timer_arm(&runq->schedlr, (_clkcycles() + (schedlrhz[cpu] / runq->cnt)));
+		_timer_arm(&runq->schedlr, (_clkcycles() + (schedlrhz / runq->cnt)));
 	__switchctx(nxtthrd); // Will halt if nxtthrd is null.
 	_preempt_enable();
 }
@@ -927,7 +919,7 @@ static void __thread_cur_preempt (uintptr_t cpu) {
 	_xchg(&runq->lock, 0);
 	if (nxtthrd != _thread_cur) {
 		if (runq->cnt > 1)
-			_timer_arm(&runq->schedlr, (_clkcycles() + (schedlrhz[cpu] / runq->cnt)));
+			_timer_arm(&runq->schedlr, (_clkcycles() + (schedlrhz / runq->cnt)));
 		___switchctx(nxtthrd);
 	}
 	done:;

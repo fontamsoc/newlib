@@ -274,8 +274,6 @@ void _thread_exit (void);
 #define _is_thread_terminated(X) (/*_is_thread_stopped(X) &&*/ !(X)->savedctx.sp)
 #define _is_thread_running(X) ((X)->state == _THREAD_RUNNING)
 
-void _schedlr_freq (uintptr_t cpu, uintptr_t cycles);
-
 uintptr_t _ncpu (void);
 
 #endif /* __LIBGLOSS_RISCV__OS_H */
