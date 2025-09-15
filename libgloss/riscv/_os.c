@@ -49,13 +49,10 @@ bool __trap_exc_ecall_m (void) {
 	return true;
 }
 
-// Thread-local IRQ status; when null IRQs are enabled, otherwise they are disabled.
-static __thread uintptr_t __irq_disabled = 0;
-
 void _preempt_disable (void) {
 	if (_trap_savedctx()) // Do nothing if handling a trap.
 		return;
-	if (__irq_disabled++)
+	if (_thread_cur->irq_disabled++)
 		return;
 	__asm__ __volatile__ ("csrc mstatus, 0x8\n" ::: "memory"); // Clear mstatus.mie.
 }
@@ -63,11 +60,11 @@ void _preempt_disable (void) {
 void _preempt_enable (void) {
 	if (_trap_savedctx()) // Do nothing if handling a trap.
 		return;
-	if (!__irq_disabled) {
+	if (!_thread_cur->irq_disabled) {
 		_oops();
 		return;
 	}
-	if (--__irq_disabled)
+	if (--_thread_cur->irq_disabled)
 		return;
 	__asm__ __volatile__ ("csrs mstatus, 0x8\n" ::: "memory"); // Set mstatus.mie.
 }
@@ -644,6 +641,7 @@ void __init_multithreading (_thread_t *thrd) {
 	_timer_init(&thrd->z, __thread_wakeup);
 	thrd->stack = 0;
 	thrd->cpu = 0;
+	thrd->irq_disabled = 0;
 	thrd->savedctx.sp = (uintptr_t)thrd; // Set so thread is not seen as terminated.
 	_irq_init(&__ipi, -1, __ipi_preempt);
 	_irq_register(&__ipi);
@@ -699,6 +697,7 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 	_timer_init(&thrd->z, __thread_wakeup);
 	thrd->stack = (is_stack_given ? 0 : stack);
 	thrd->cpu = -(_cpuid() + 1); // Negate to signal __switchctx().
+	thrd->irq_disabled = 0;
 	thrd->savedctx.ra = (uintptr_t)_thread_exit;
 	thrd->savedctx.sp = (uintptr_t)thrd;
 	thrd->savedctx.s0 = (uintptr_t)arg;

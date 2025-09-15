@@ -170,6 +170,7 @@ typedef struct {
 	_timer_t z; // Used to make the thread sleep for a duration.
 	void *stack; // Start of the stack.
 	uintptr_t cpu; // Used by _thread_sched() to index the __runq to use.
+	uintptr_t irq_disabled; // For this thread, when null IRQs are enabled, otherwise they are disabled.
 	struct {
 		uintptr_t ra, sp;
 		uintptr_t s0, s1, s2, s3, s4, s5;
