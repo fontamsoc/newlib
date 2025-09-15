@@ -569,7 +569,7 @@ static struct __runq {
 	              // Points to the next _thread_t to own the cpu.
 	volatile _thread_t *cur; // _thread_t currently owning the cpu.
 	uintptr_t cnt; // Number of _thread_t in the circular linked list.
-	_timer_t schedlr; // Used for scheduled preemption of _thread_cur.
+	_timer_t schedlr; // Used for timeslice preemption of _thread_cur.
 } __runq[NCPU] = {[0 ... NCPU-1] = {0, 0, 0, 0, _TIMER_CLR}};
 
 static uintptr_t schedlrhz[NCPU];
@@ -950,7 +950,7 @@ void _thread_preempt (uintptr_t cpu) {
 	_preempt_enable();
 }
 
-// Callback for scheduled preemption of _thread_cur.
+// Callback for timeslice preemption of _thread_cur.
 static void __timer_preempt (_timer_t *) {
 	// IRQs are disabled since this function runs in a trap handling.
 	__thread_cur_preempt(_cpuid());
