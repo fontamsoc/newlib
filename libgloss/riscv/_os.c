@@ -572,9 +572,8 @@ static struct __runq {
 	              // Points to the next _thread_t to own the cpu.
 	volatile _thread_t *cur; // _thread_t currently owning the cpu.
 	uintptr_t cnt; // Number of _thread_t in the circular linked list.
-	_date_t scheddate; // Next scheduled preemption date when non-null.
 	_timer_t schedlr; // Used for scheduled preemption of _thread_cur.
-} __runq[NCPU] = {[0 ... NCPU-1] = {0, 0, 0, 0, 0, _TIMER_CLR}};
+} __runq[NCPU] = {[0 ... NCPU-1] = {0, 0, 0, 0, _TIMER_CLR}};
 
 static uintptr_t schedlrhz[NCPU];
 
@@ -623,12 +622,8 @@ static void __thread_wakeup (_timer_t *t) {
 	thrd->state = _THREAD_RUNNING;
 	runq->cur = thrd;
 	_xchg(&runq->lock, 0);
-	if (runq->cnt > 1) {
-		_date_t scheddate = (_clkcycles() + (schedlrhz[cpu] / runq->cnt));
-		_timer_arm(&runq->schedlr, scheddate);
-		runq->scheddate = scheddate;
-	} else
-		runq->scheddate = 0;
+	if (runq->cnt > 1)
+		_timer_arm(&runq->schedlr, (_clkcycles() + (schedlrhz[cpu] / runq->cnt)));
 	__switchctx(thrd);
 }
 
@@ -870,12 +865,8 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 		_thread_cur->wq = wq;
 	} else
 		_dlist_clr(&_thread_cur->l);
-	if (runq->cnt > 1) {
-		_date_t scheddate = (_clkcycles() + (schedlrhz[cpu] / runq->cnt));
-		_timer_arm(&runq->schedlr, scheddate);
-		runq->scheddate = scheddate;
-	} else
-		runq->scheddate = 0;
+	if (runq->cnt > 1)
+		_timer_arm(&runq->schedlr, (_clkcycles() + (schedlrhz[cpu] / runq->cnt)));
 	__switchctx(nxtthrd); // Will halt if nxtthrd is null.
 	_preempt_enable();
 }
@@ -936,15 +927,10 @@ static void __thread_cur_preempt (uintptr_t cpu) {
 	runq->cur = nxtthrd;
 	_xchg(&runq->lock, 0);
 	if (nxtthrd != _thread_cur) {
-		if (runq->cnt > 1) {
-			_date_t scheddate = (_clkcycles() + (schedlrhz[cpu] / runq->cnt));
-			_timer_arm(&runq->schedlr, scheddate);
-			runq->scheddate = scheddate;
-		} else
-			runq->scheddate = 0;
+		if (runq->cnt > 1)
+			_timer_arm(&runq->schedlr, (_clkcycles() + (schedlrhz[cpu] / runq->cnt)));
 		___switchctx(nxtthrd);
-	} else
-		runq->scheddate = 0;
+	}
 	done:;
 }
 
