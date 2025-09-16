@@ -675,7 +675,6 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 		stack = malloc(stacksz);
 		if (!stack)
 			_oops();
-		stacksz = malloc_usable_size(stack);
 	}
 	extern char __tdata_start[], __tdata_end[], __tbss_start[], __tbss_end[];
 	void* tp = ((stack + stacksz) - (__tbss_end - __tdata_start));
