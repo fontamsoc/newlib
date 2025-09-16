@@ -103,6 +103,7 @@ _start:
   call  memcpy
   addi  sp, sp, -THREAD_STRUCT_SIZE
   mv    tp, sp
+  andi  sp, sp, ~15 # RISC-V required stack alignment.
 
   # Init __heap_ptr to _end, and __heap_end to the value of register sp.
   la    t0, __heap_ptr

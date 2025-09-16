@@ -690,7 +690,7 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 	thrd->cpu = -(_cpuid() + 1); // Negate to signal __switchctx().
 	thrd->irq_disabled = 0;
 	thrd->savedctx.ra = (uintptr_t)_thread_exit;
-	thrd->savedctx.sp = (uintptr_t)thrd;
+	thrd->savedctx.sp = ((uintptr_t)thrd & /* RISC-V required stack alignment */ ~(uintptr_t)15);
 	thrd->savedctx.s0 = (uintptr_t)arg;
 	thrd->savedctx.s1 = (uintptr_t)entry;
 	thrd->savedctx.scratch = 0;
