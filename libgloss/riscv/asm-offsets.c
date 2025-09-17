@@ -57,10 +57,6 @@ void main (void) {
 	OFFSET(TRAP_SAVEDCTX_TVAL,    _trap_savedctx_t, tval);
 	OFFSET(TRAP_SAVEDCTX_TVAL2,   _trap_savedctx_t, tval2);
 	OFFSET(TRAP_SAVEDCTX_CAUSE,   _trap_savedctx_t, cause);
-	OFFSET(TRAP_SAVEDCTX_CYCLE,   _trap_savedctx_t, cycle);
-#if __riscv_xlen == 32
-	DEFINE(TRAP_SAVEDCTX_CYCLEH, (offsetof(_trap_savedctx_t, cycle) + 4));
-#endif
 
 	DEFINE(TRAP_SAVEDCTX_SIZE, sizeof(_trap_savedctx_t));
 

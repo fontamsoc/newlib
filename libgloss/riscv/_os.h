@@ -191,7 +191,6 @@ typedef struct {
 	// Above valid only when interrupting a thread or the handling of a trap.
 	uintptr_t scratch, status, epc;
 	uintptr_t tval, tval2, cause;
-	_date_t cycle;
 } _trap_savedctx_t;
 
 // Return non-null only when handling a trap.

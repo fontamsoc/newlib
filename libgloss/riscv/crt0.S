@@ -204,12 +204,6 @@ __trap:
   REG_S t5, TRAP_SAVEDCTX_TVAL2(sp)
   REG_S t6, TRAP_SAVEDCTX_CAUSE(sp)
 
-  call _clkcycles
-  REG_S a0, TRAP_SAVEDCTX_CYCLE(sp)
-#if __riscv_xlen == 32
-  REG_S a1, TRAP_SAVEDCTX_CYCLEH(sp)
-#endif
-
   csrw mscratch, sp /* _trap_savedctx */
 
   # MSB of cause differentiates between
