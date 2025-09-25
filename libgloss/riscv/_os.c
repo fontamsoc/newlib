@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-// 20250907 (c) William Fonkou Tambe
+// 20250924 (c) William Fonkou Tambe
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -602,9 +602,8 @@ static void __thread_wakeup (_timer_t *t) {
 	while (_xchg(&runq->lock, 1));
 	_thread_t *curthrd = (_thread_t *)runq->cur;
 	if (curthrd) {
-		_thread_t *nxtthrd = container_of(curthrd->l.next, _thread_t, l);
-		_dlist_add(&thrd->l, nxtthrd->l.prev, &nxtthrd->l);
-		runq->l = nxtthrd;
+		_dlist_add(&thrd->l, curthrd->l.prev, &curthrd->l);
+		runq->l = curthrd;
 	} else {
 		_dlist_init(&thrd->l);
 		runq->l = thrd;
@@ -613,12 +612,16 @@ static void __thread_wakeup (_timer_t *t) {
 	thrd->state = _THREAD_RUNNING;
 	runq->cur = thrd;
 	_xchg(&runq->lock, 0);
+	_date_t scheddate, curscheddate = runq->scheddate;
+	_date_t clkcycles = _clkcycles();
 	if (runq->cnt > 1) {
-		_date_t scheddate = (_clkcycles() + (schedlrhz / runq->cnt));
+		scheddate = (clkcycles + (schedlrhz / runq->cnt));
 		_timer_arm(&runq->schedlr, scheddate);
 		runq->scheddate = scheddate;
 	} else
 		runq->scheddate = 0;
+	if (curthrd && curscheddate > clkcycles)
+		curthrd->timeleft = (curscheddate - clkcycles);
 	__switchctx(thrd);
 }
 
@@ -637,6 +640,7 @@ void __init_multithreading (_thread_t *thrd) {
 	thrd->state = _THREAD_RUNNING;
 	thrd->wq = 0;
 	_timer_init(&thrd->z, __thread_wakeup);
+	thrd->timeleft = 0;
 	thrd->stack = 0;
 	thrd->cpu = 0;
 	thrd->irq_disabled = 0;
@@ -691,6 +695,7 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 	thrd->state = _THREAD_STOPPED;
 	thrd->wq = 0;
 	_timer_init(&thrd->z, __thread_wakeup);
+	thrd->timeleft = 0;
 	thrd->stack = (is_stack_given ? 0 : stack);
 	thrd->cpu = -(_cpuid() + 1); // Negate to signal __switchctx().
 	thrd->irq_disabled = 0;
@@ -861,7 +866,12 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 	} else
 		_dlist_clr(&_thread_cur->l);
 	if (runq->cnt > 1) {
-		_date_t scheddate = (_clkcycles() + (schedlrhz / runq->cnt));
+		_date_t scheddate = _clkcycles();
+		if (nxtthrd->timeleft) {
+			scheddate += nxtthrd->timeleft;
+			nxtthrd->timeleft = 0;
+		} else
+			scheddate += (schedlrhz / runq->cnt);
 		_timer_arm(&runq->schedlr, scheddate);
 		runq->scheddate = scheddate;
 	} else
@@ -927,7 +937,12 @@ static void __thread_cur_preempt (uintptr_t cpu) {
 	_xchg(&runq->lock, 0);
 	if (nxtthrd != _thread_cur) {
 		if (runq->cnt > 1) {
-			_date_t scheddate = (_clkcycles() + (schedlrhz / runq->cnt));
+			_date_t scheddate = _clkcycles();
+			if (nxtthrd->timeleft) {
+				scheddate += nxtthrd->timeleft;
+				nxtthrd->timeleft = 0;
+			} else
+				scheddate += (schedlrhz / runq->cnt);
 			_timer_arm(&runq->schedlr, scheddate);
 			runq->scheddate = scheddate;
 		} else
