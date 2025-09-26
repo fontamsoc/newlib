@@ -625,11 +625,11 @@ static void __thread_wakeup (_timer_t *t) {
 	__switchctx(thrd);
 }
 
-static void __timer_preempt (_timer_t *);
+static void __timeslice_preempt (_timer_t *);
 
 // Callback for preempting _thread_cur when receiving an IPI.
 void __ipi_preempt (_irq_t *) {
-	__timer_preempt(0);
+	__timeslice_preempt(0);
 }
 
 _irq_t __ipi;
@@ -664,7 +664,7 @@ void __init_multithreading (_thread_t *thrd) {
 	__runq[0].cur = thrd;
 	__runq[0].cnt = 1;
 	for (uintptr_t i = 0; i < __ncpu; ++i)
-		_timer_init(&__runq[i].schedlr, __timer_preempt);
+		_timer_init(&__runq[i].schedlr, __timeslice_preempt);
 	schedlrhz = SCHEDLRHZ;
 }
 
@@ -971,7 +971,7 @@ void _thread_preempt (uintptr_t cpu) {
 }
 
 // Callback for timeslice preemption of _thread_cur.
-static void __timer_preempt (_timer_t *) {
+static void __timeslice_preempt (_timer_t *) {
 	// IRQs are disabled since this function runs in a trap handling.
 	__thread_cur_preempt(_cpuid());
 }
