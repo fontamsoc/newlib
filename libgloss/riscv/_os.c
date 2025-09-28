@@ -764,13 +764,18 @@ void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 	_preempt_enable();
 }
 
-// Schedule a thread to run next on its cpu (ie: thrd->cpu).
+// Schedule a thread to run next on the cpu with the least number of threads.
 // If the thread is on a _waitq_t, it gets removed from it.
 // Note that it does not preempt _thread_cur.
 void _thread_sched (_thread_t *thrd) {
-	uintptr_t cpu = thrd->cpu;
-	if ((intptr_t)cpu < 0)
-		cpu = ((-cpu) - 1);
+	uintptr_t cpu = 0, cnt = -1;
+	for (int i = 0; i < __ncpu; ++i) {
+		uintptr_t n = __runq[i].cnt;
+		if (n < cnt) {
+			cnt = n;
+			cpu = i;
+		}
+	}
 	_thread_schedoncpu(thrd, cpu, false);
 }
 
