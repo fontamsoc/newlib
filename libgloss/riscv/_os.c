@@ -771,6 +771,10 @@ void _thread_sched (_thread_t *thrd) {
 	uintptr_t cpu = 0, cnt = -1;
 	for (int i = 0; i < __ncpu; ++i) {
 		uintptr_t n = __runq[i].cnt;
+		if (!n) {
+			cpu = i;
+			break;
+		}
 		if (n < cnt) {
 			cnt = n;
 			cpu = i;
