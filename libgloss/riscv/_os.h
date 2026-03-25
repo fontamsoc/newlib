@@ -171,6 +171,7 @@ typedef struct {
 	_date_t timeleft; // Time left to run when non-null.
 	void *stack; // Start of the stack.
 	uintptr_t cpu; // Used by _thread_sched() to index the __runq to use.
+	bool pin; // When true, the thread does not migrate.
 	uintptr_t irq_disabled; // For this thread, when null IRQs are enabled, otherwise they are disabled.
 	struct {
 		uintptr_t ra, sp;

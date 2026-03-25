@@ -643,6 +643,7 @@ void __init_multithreading (_thread_t *thrd) {
 	thrd->timeleft = 0;
 	thrd->stack = 0;
 	thrd->cpu = 0;
+	thrd->pin = false;
 	thrd->irq_disabled = 0;
 	thrd->savedctx.sp = (uintptr_t)thrd; // Set so thread is not seen as terminated.
 	_irq_init(&__ipi, -1, __ipi_preempt);
@@ -698,6 +699,7 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 	thrd->timeleft = 0;
 	thrd->stack = (is_stack_given ? 0 : stack);
 	thrd->cpu = -(_cpuid() + 1); // Negate to signal __switchctx().
+	thrd->pin = false;
 	thrd->irq_disabled = 0;
 	thrd->savedctx.ra = (uintptr_t)_thread_exit;
 	thrd->savedctx.sp = ((uintptr_t)thrd & /* RISC-V required stack alignment */ ~(uintptr_t)15);
@@ -749,6 +751,7 @@ void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 		thrd->cpu = -(cpu + 1); // Negate to signal __switchctx().
 	else
 		thrd->cpu = cpu;
+	thrd->pin = pin;
 	struct __runq *runq = &__runq[cpu];
 	while (_xchg(&runq->lock, 1));
 	if (runq->l)
@@ -764,23 +767,30 @@ void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 	_preempt_enable();
 }
 
-// Schedule a thread to run next on the cpu with the least number of threads.
+// Schedule a thread to run.
 // If the thread is on a _waitq_t, it gets removed from it.
 // Note that it does not preempt _thread_cur.
 void _thread_sched (_thread_t *thrd) {
-	uintptr_t cpu = 0, cnt = -1;
-	for (int i = 0; i < __ncpu; ++i) {
-		uintptr_t n = __runq[i].cnt;
-		if (!n) {
-			cpu = i;
-			break;
-		}
-		if (n < cnt) {
-			cnt = n;
-			cpu = i;
+	uintptr_t cpu;
+	bool pin = thrd->pin;
+	if (pin)
+		cpu = thrd->cpu;
+	else { // Find runq with the least number of threads.
+		cpu = 0;
+		uintptr_t cnt = -1;
+		for (int i = 0; i < __ncpu; ++i) {
+			uintptr_t n = __runq[i].cnt;
+			if (!n) {
+				cpu = i;
+				break;
+			}
+			if (n < cnt) {
+				cnt = n;
+				cpu = i;
+			}
 		}
 	}
-	_thread_schedoncpu(thrd, cpu, false);
+	_thread_schedoncpu(thrd, cpu, pin);
 }
 
 // Force-stop a thread if it is running.
