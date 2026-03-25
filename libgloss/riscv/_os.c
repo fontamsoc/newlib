@@ -859,6 +859,7 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 	_xchg(&runq->lock, 0);
 	_thread_cur->state = _THREAD_STOPPED;
 	if (wq) {
+		_thread_cur->wq = wq; // Must be set before wq->l.
 		while (_xchg(&wq->lock, 1));
 		if (wq->l)
 			_dlist_add(&_thread_cur->l, ((_thread_t *)wq->l)->l.prev, &((_thread_t *)wq->l)->l);
@@ -867,7 +868,6 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 			wq->l = _thread_cur;
 		}
 		_xchg(&wq->lock, 0);
-		_thread_cur->wq = wq;
 	} else
 		_dlist_clr(&_thread_cur->l);
 	if (runq->cnt > 1) {
