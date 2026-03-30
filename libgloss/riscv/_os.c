@@ -287,6 +287,7 @@ bool __trap_irq (void) {
 
 uintptr_t _mutex_lock (_mutex_t *m, _date_t timeout) {
 	_preempt_disable();
+	uintptr_t ret = 0;
 	if (timeout) {
 		while (_xchg(&m->lock, 1));
 		if (m->acqcnt) {
@@ -301,28 +302,20 @@ uintptr_t _mutex_lock (_mutex_t *m, _date_t timeout) {
 			// current thread missing its wake-up call and never waking up.
 			_thread_sleeponwq(&m->waitq, timeout);
 			while (_xchg(&m->lock, 1));
-			if (m->acqcnt) {
-				_xchg(&m->lock, 0);
-				_preempt_enable();
-				return 0;
-			}
+			if (m->acqcnt)
+				goto unlock;
 		}
-		m->acqcnt = 1;
-		_xchg(&m->lock, 0);
-		_preempt_enable();
-		return 1;
+		goto acquire;
 	}
-	uintptr_t ret = 0;
 	if (_xchg(&m->lock, 1))
 		goto done;
 	if (m->acqcnt)
 		goto unlock;
+	acquire: m->owner = _thread_cur;
 	m->acqcnt = 1;
 	ret = 1;
-	unlock:
-	_xchg(&m->lock, 0);
-	done:
-	_preempt_enable();
+	unlock: _xchg(&m->lock, 0);
+	done: _preempt_enable();
 	return ret;
 }
 
@@ -330,6 +323,7 @@ void _mutex_unlock (_mutex_t *m) {
 	_preempt_disable();
 	while (_xchg(&m->lock, 1));
 	m->acqcnt = 0;
+	m->owner = 0;
 	_thread_schedone(&m->waitq);
 	_xchg(&m->lock, 0);
 	_preempt_enable();
@@ -342,10 +336,8 @@ uintptr_t _mutex_lock_recursive (_mutex_t *m, _date_t timeout) {
 		++m->acqcnt;
 		return 1;
 	}
-	if (_mutex_lock(m, timeout)) {
-		m->owner = _thread_cur;
+	if (_mutex_lock(m, timeout))
 		return 1;
-	}
 	return 0;
 }
 
@@ -356,7 +348,6 @@ void _mutex_unlock_recursive (_mutex_t *m) {
 		--m->acqcnt;
 		return;
 	}
-	m->owner = 0;
 	_mutex_unlock(m);
 }
 

@@ -123,7 +123,7 @@ typedef struct {
 
 typedef struct {
 	uintptr_t lock;
-	void* owner; // _tpval() when mutex was acquired.
+	void* owner; // Points to _thread_t which acquired the mutex.
 	uintptr_t acqcnt; // Acquisition count.
 	_waitq_t waitq; // Used by _thread_t(s) waiting on this _mutex_t.
 } _mutex_t;
