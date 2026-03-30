@@ -810,8 +810,10 @@ void _thread_stop (_thread_t *thrd) {
 // Terminate a thread by calling _thread_stop() on it and preparing it for _thread_dispose().
 // _thread_sched() or _thread_schedoncpu() can no longer resume the thread.
 void _thread_kill (_thread_t *thrd) {
+	_preempt_disable();
 	_thread_stop(thrd);
 	thrd->savedctx.sp = 0; // Set null to signal terminated.
+	_preempt_enable();
 }
 
 // Free memory used by a terminated _thread_t returned by _thread_create().
@@ -884,6 +886,7 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 // Call _thread_sched() on the thread that was first added to the waitq.
 // Note that it does not preempt _thread_cur.
 void _thread_schedone (_waitq_t *wq) {
+	_preempt_disable();
 	if (wq->p) { // Avoid a race condition until wq->l is true.
 		while (!wq->l)
 			asm volatile("" ::: "memory");
@@ -895,6 +898,7 @@ void _thread_schedone (_waitq_t *wq) {
 		// _thread_sched() removes the _thread_t from the _waitq_t.
 		_thread_sched(wq->l);
 	}
+	_preempt_enable();
 }
 
 // Call _thread_sched() on all threads in the waitq,
@@ -979,8 +983,10 @@ static void __timeslice_preempt (_timer_t *) {
 // Terminate _thread_cur by calling _thread_stop() on it and preparing it for _thread_dispose().
 // _thread_sched() or _thread_schedoncpu() can no longer resume the thread.
 void _thread_exit (void) {
+	_preempt_disable();
 	_thread_kill(_thread_cur);
 	_thread_yield();
+	_oops();
 }
 
 // unimplemented exceptions.
