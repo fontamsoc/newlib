@@ -830,7 +830,6 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 	_preempt_disable();
 	if (!_thread_cur)
 		_oops();
-	_thread_t *nxtthrd;
 	if (e != _DATE_MAX)
 		_timer_arm(&_thread_cur->z, e);
 	uintptr_t cpu = _thread_cur->cpu;
@@ -838,6 +837,7 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 		_oops();
 	struct __runq *runq = &__runq[cpu];
 	while (_xchg(&runq->lock, 1));
+	_thread_t *nxtthrd;
 	if (_thread_cur->l.next != &_thread_cur->l) {
 		if (_thread_cur == runq->l)
 			_oops(); // runq->l should be pointing to the next _thread_t and not _thread_cur.
