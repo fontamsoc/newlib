@@ -964,11 +964,10 @@ void _thread_preempt (uintptr_t cpu) {
 		__irq_ipi(cpu);
 		// No need to wait, because it could still
 		// be the same thread running on the CPU.
-		_preempt_enable();
-		return;
+		goto done;
 	}
 	__thread_cur_preempt(cpu);
-	_preempt_enable();
+	done: _preempt_enable();
 }
 
 // Callback for timeslice preemption of _thread_cur.
