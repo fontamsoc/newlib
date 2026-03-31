@@ -214,7 +214,7 @@ void _irq_unregister (_irq_t *i) {
 	_preempt_enable();
 }
 
-uintptr_t irqctrl_lock = 0; // Lock used to serialize access to the irqctrl device.
+static uintptr_t irqctrl_lock = 0; // Lock used to serialize access to the irqctrl device.
 
 // Triggers an interrupt on the CPU given as argument.
 // Returns the CPU number if valid, otherwise returns -1.
