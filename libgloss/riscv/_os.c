@@ -387,6 +387,7 @@ size_t _fifo_put (_fifo_t *f, void *buf, size_t sz, _date_t timeout) {
 				memcpy(fbuf + fwidx, buf, sz);
 		}
 	}
+	size_t ret = 0;
 	if (timeout) {
 		while (_xchg(&f->lock, 1));
 		if (((f->widx - f->ridx) + sz) > fsz) {
@@ -409,31 +410,25 @@ size_t _fifo_put (_fifo_t *f, void *buf, size_t sz, _date_t timeout) {
 					timeout -= sleepduration;
 					goto sleeponwq;
 				}
-				_xchg(&f->lock, 0);
-				_preempt_enable();
-				return 0; // Return 0 because it must be write-all or nothing.
+				goto unlock; // Return 0 because it must be write-all or nothing.
 			}
 		}
-		if (sz)
+		if (sz) {
 			put();
-		_thread_schedone(&f->rwaitq);
-		_xchg(&f->lock, 0);
-		_preempt_enable();
-		return sz;
+			goto updated;
+		} else
+			goto unlock;
 	}
-	size_t ret = 0;
 	if (_xchg(&f->lock, 1))
 		goto done;
 	if (((f->widx - f->ridx) + sz) > fsz)
 		goto unlock;
 	if (sz)
 		put();
+	updated: ret = sz;
 	_thread_schedone(&f->rwaitq);
-	ret = sz;
-	unlock:
-	_xchg(&f->lock, 0);
-	done:
-	_preempt_enable();
+	unlock: _xchg(&f->lock, 0);
+	done: _preempt_enable();
 	return ret;
 }
 
@@ -473,6 +468,7 @@ size_t _fifo_get (_fifo_t *f, void *buf, size_t sz, bool peek, _date_t timeout) 
 				memcpy(buf, fbuf + fridx, sz);
 		}
 	}
+	size_t ret = 0;
 	if (flush || timeout) {
 		while (_xchg(&f->lock, 1));
 		if (flush)
@@ -497,31 +493,25 @@ size_t _fifo_get (_fifo_t *f, void *buf, size_t sz, bool peek, _date_t timeout) 
 					timeout -= sleepduration;
 					goto sleeponwq;
 				}
-				_xchg(&f->lock, 0);
-				_preempt_enable();
-				return 0; // Return 0 because it must be read-all or nothing.
+				goto unlock; // Return 0 because it must be read-all or nothing.
 			}
 		}
-		if (sz)
+		if (sz) {
 			get();
-		_thread_schedone(&f->wwaitq);
-		_xchg(&f->lock, 0);
-		_preempt_enable();
-		return sz;
+			goto updated;
+		} else
+			goto unlock;
 	}
-	size_t ret = 0;
 	if (_xchg(&f->lock, 1))
 		goto done;
 	if ((f->widx - f->ridx) < sz)
 		goto unlock;
 	if (sz)
 		get();
+	updated: ret = sz;
 	_thread_schedone(&f->wwaitq);
-	ret = sz;
-	unlock:
-	_xchg(&f->lock, 0);
-	done:
-	_preempt_enable();
+	unlock: _xchg(&f->lock, 0);
+	done: _preempt_enable();
 	return ret;
 }
 
