@@ -800,9 +800,10 @@ void _thread_stop (_thread_t *thrd) {
 			__irq_ipi(cpu);
 			while (thrd == runq->cur);
 		}
-	}
-	thrd->state = _THREAD_STOPPED;
-	_dlist_clr(&thrd->l);
+		thrd->state = _THREAD_STOPPED;
+		_dlist_clr(&thrd->l);
+	} else if (thrd->state != _THREAD_STOPPED)
+		_oops();
 	_preempt_enable();
 }
 
