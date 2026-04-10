@@ -742,8 +742,9 @@ void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 	runq->l = thrd;
 	runq->cnt += 1;
 	thrd->state = _THREAD_RUNNING;
+	uintptr_t is_cpuhalted = (cpu != _cpuid() && runq->cnt == 1 && !runq->cur);
 	_xchg(&runq->lock, 0);
-	if (cpu != _cpuid() && !runq->cur) // Send IPI if cpu halted.
+	if (is_cpuhalted) // Send IPI if cpu halted.
 		__irq_ipi(cpu);
 	_preempt_enable();
 }
