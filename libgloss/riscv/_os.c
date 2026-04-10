@@ -752,26 +752,32 @@ void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 // If the thread is on a _waitq_t, it gets removed from it.
 // Note that it does not preempt _thread_cur.
 void _thread_sched (_thread_t *thrd) {
-	uintptr_t cpu;
-	bool pin = thrd->pin;
-	if (pin)
-		cpu = thrd->cpu;
+	if (thrd->pin)
+		_thread_schedoncpu(thrd, thrd->cpu, thrd->pin);
 	else { // Find runq with the least number of threads.
-		cpu = 0;
-		uintptr_t cnt = -1;
-		for (int i = 0; i < __ncpu; ++i) {
-			uintptr_t n = __runq[i].cnt;
-			if (!n) {
-				cpu = i;
-				break;
+		static uintptr_t pnd[NCPU] = {[0 ... NCPU-1] = 0};
+		static uintptr_t lock = 0;
+		uintptr_t cpu;
+		_preempt_disable();
+		while (_xchg(&lock, 1)); { // Block executed by one CPU at a time.
+			cpu = 0;
+			for (uintptr_t i = 0, cnt = -1; i < __ncpu; ++i) {
+				uintptr_t n = (__runq[i].cnt + pnd[i]);
+				if (!n) {
+					cpu = i;
+					break;
+				}
+				if (n < cnt) {
+					cnt = n;
+					cpu = i;
+				}
 			}
-			if (n < cnt) {
-				cnt = n;
-				cpu = i;
-			}
-		}
+			pnd[cpu] += 1; // Compensate until __runq[cpu].cnt gets incremented.
+		} _xchg(&lock, 0);
+		_thread_schedoncpu(thrd, cpu, thrd->pin);
+		_atomic_dec(&pnd[cpu]);
+		_preempt_enable();
 	}
-	_thread_schedoncpu(thrd, cpu, pin);
 }
 
 // Force-stop a thread if it is running.
