@@ -773,7 +773,7 @@ void _thread_sched (_thread_t *thrd) {
 					cpu = i;
 				}
 			}
-			pnd[cpu] += 1; // Compensate until __runq[cpu].cnt gets incremented.
+			_atomic_inc(&pnd[cpu]);; // Compensate until __runq[cpu].cnt gets incremented.
 		} _xchg(&lock, 0);
 		_thread_schedoncpu(thrd, cpu, thrd->pin);
 		_atomic_dec(&pnd[cpu]);
