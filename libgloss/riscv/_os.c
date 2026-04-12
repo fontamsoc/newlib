@@ -742,10 +742,24 @@ void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 	runq->l = thrd;
 	runq->cnt += 1;
 	thrd->state = _THREAD_RUNNING;
-	uintptr_t is_cpuhalted = (cpu != _cpuid() && runq->cnt == 1 && !runq->cur);
+	uintptr_t is_cpuhalted, is_tosched;
+	if (cpu != _cpuid()) {
+		is_cpuhalted = (runq->cnt == 1 && !runq->cur);
+		is_tosched = 0;
+	} else {
+		is_cpuhalted = 0;
+		is_tosched = (runq->cnt == 2);
+	}
 	_xchg(&runq->lock, 0);
 	if (is_cpuhalted) // Send IPI if cpu halted.
 		__irq_ipi(cpu);
+	else if (is_tosched) {
+		if (runq->scheddate)
+			_oops();
+		_date_t scheddate = (_clkcycles() + (schedlrhz / runq->cnt));
+		_timer_arm(&runq->schedlr, scheddate);
+		runq->scheddate = scheddate;
+	}
 	_preempt_enable();
 }
 
