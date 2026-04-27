@@ -44,25 +44,25 @@
 #define _atomic_or(ptr, val)  _atomic_op(amoor, ptr, val)
 #define _atomic_xor(ptr, val) _atomic_op(amoxor, ptr, val)
 
-struct _dlist {
+typedef struct _dlist {
 	struct _dlist *prev;
 	struct _dlist *next;
-};
+} _dlist_t;
 
 #define _DLIST_CLR {0, 0}
 
-static inline void _dlist_clr (struct _dlist *l) {
+static inline void _dlist_clr (_dlist_t *l) {
 	l->next = 0;
 	l->prev = 0;
 }
 
-static inline void _dlist_init (struct _dlist *l) {
+static inline void _dlist_init (_dlist_t *l) {
 	l->next = l;
 	l->prev = l;
 }
 
 // Insert an entry between two known consecutive entries.
-static inline void _dlist_add (struct _dlist *l, struct _dlist *prev, struct _dlist *next) {
+static inline void _dlist_add (_dlist_t *l, _dlist_t *prev, _dlist_t *next) {
 	next->prev = l;
 	l->next = next;
 	l->prev = prev;
@@ -70,7 +70,7 @@ static inline void _dlist_add (struct _dlist *l, struct _dlist *prev, struct _dl
 }
 
 // Remove one or more entries between two known entries.
-static inline void _dlist_del (struct _dlist *prev, struct _dlist *next) {
+static inline void _dlist_del (_dlist_t *prev, _dlist_t *next) {
 	next->prev = prev;
 	prev->next = next;
 }
@@ -78,13 +78,11 @@ static inline void _dlist_del (struct _dlist *prev, struct _dlist *next) {
 typedef uint64_t _date_t;
 #define _DATE_MAX (-(_date_t)1)
 
-struct _timer {
-	struct _dlist l;
+typedef struct _timer {
+	_dlist_t l;
 	_date_t e; // Expiration date.
 	void (*f)(struct _timer *);
-};
-
-typedef struct _timer _timer_t;
+} _timer_t;
 
 #define _TIMER_CLR {_DLIST_CLR, 0, 0}
 
@@ -95,13 +93,11 @@ typedef struct _timer _timer_t;
 void _timer_arm (_timer_t *t, _date_t e);
 void _timer_disarm (_timer_t *t);
 
-struct _irq {
-	struct _dlist l;
+typedef struct _irq {
+	_dlist_t l;
 	uintptr_t n; // Interrupt number.
 	void (*f)(struct _irq *);
-};
-
-typedef struct _irq _irq_t;
+} _irq_t;
 
 #define _IRQ_CLR {_DLIST_CLR, 0, 0}
 
@@ -160,7 +156,7 @@ void _fifo_rst (_fifo_t *f);
 #define _sem_rst(X) _fifo_rst(X)
 
 typedef struct {
-	struct _dlist l; // Circular linked list of either running or stopped (on _waitq_t) threads.
+	_dlist_t l; // Circular linked list of either running or stopped (on _waitq_t) threads.
 	enum {
 		_THREAD_STOPPED = 0,
 		_THREAD_RUNNING = 1
@@ -211,15 +207,6 @@ typedef struct {
 	__asm__ __volatile__ ("csrr %0, 0xcc0\n" : "=r"(x) :: "memory"); \
 	x; })
 
-// Print diagnosis info and shutdown.
-#define _oops() ({ \
-	/* Trap using a syscall which captures the pc. */ \
-	register uintptr_t syscall_id asm("a7") = -1; \
-	__asm__ __volatile__ ("ecall" :: "r"(syscall_id)); })
-
-void _preempt_disable (void);
-void _preempt_enable (void);
-
 _date_t _clkcycles (void);
 
 #define _SECS(X) ({ \
@@ -238,6 +225,15 @@ _date_t _clkcycles (void);
 	_date_t x = _clkfreq(); \
 	x = ((x >= 1000000000) ? ((X)*(x/1000000000)) : (((X)*x)/1000000000)); \
 	x; })
+
+// Print diagnosis info and shutdown.
+#define _oops() ({ \
+	/* Trap using a syscall which captures the pc. */ \
+	register uintptr_t syscall_id asm("a7") = -1; \
+	__asm__ __volatile__ ("ecall" :: "r"(syscall_id)); })
+
+void _preempt_disable (void);
+void _preempt_enable (void);
 
 _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *arg), void *arg);
 void _thread_sched (_thread_t *thrd);
