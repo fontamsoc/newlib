@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-// 20250924 (c) William Fonkou Tambe
+// 20260504 (c) William Fonkou Tambe
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -35,7 +35,7 @@ __attribute__((noinline)) static void __printstr (char *s) {
 uint8_t __trap_stacks[NCPU][TRAP_STACK_SIZE];
 
 bool __trap_exc_ecall_m (void) {
-	_trap_savedctx_t *savedctx = _trap_savedctx();
+	_savedctx_t *savedctx = _trap_savedctx();
 	switch (savedctx->a7) {
 		case -1:
 			__printstr("==== OOPS CPU"); __printdec(_cpuid());
@@ -239,7 +239,7 @@ static uintptr_t __irq_ack (uintptr_t en) {
 }
 
 bool __trap_irq (void) {
-	_trap_savedctx_t *savedctx = _trap_savedctx();
+	_savedctx_t *savedctx = _trap_savedctx();
 	uintptr_t coreid = _cpuid();
 	switch (savedctx->cause) {
 		case (7 /* Machine Timer */ | (1<<(__riscv_xlen-1))):
@@ -626,7 +626,7 @@ void __init_multithreading (_thread_t *thrd) {
 	thrd->cpu = 0;
 	thrd->pin = false;
 	thrd->irq_disabled = 0;
-	thrd->savedctx.sp = (uintptr_t)thrd; // Set so thread is not seen as terminated.
+	thrd->savedctx = (_savedctx_t *)-1; // Set so thread is not seen as terminated.
 	_irq_init(&__ipi, -1, __ipi_preempt);
 	_irq_register(&__ipi);
 	__ncpu += 1;
@@ -682,12 +682,12 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 	thrd->cpu = -(_cpuid() + 1); // Negate to signal __switchctx().
 	thrd->pin = false;
 	thrd->irq_disabled = 0;
-	thrd->savedctx.ra = (uintptr_t)_thread_exit;
-	thrd->savedctx.sp = ((uintptr_t)thrd & /* RISC-V required stack alignment */ ~(uintptr_t)15);
-	thrd->savedctx.s0 = (uintptr_t)arg;
-	thrd->savedctx.s1 = (uintptr_t)entry;
-	thrd->savedctx.scratch = 0;
-	thrd->savedctx.status = 0x8; // Set mstatus.mie to have IRQs initially enabled.
+	thrd->savedctx = (((_savedctx_t *)((uintptr_t)thrd &/* RISC-V required stack alignment */~(uintptr_t)15))-1);
+	thrd->savedctx->ra = (uintptr_t)_thread_exit;
+	thrd->savedctx->s0 = (uintptr_t)arg;
+	thrd->savedctx->s1 = (uintptr_t)entry;
+	thrd->savedctx->scratch = 0;
+	thrd->savedctx->status = 0x8; // Set mstatus.mie to have IRQs initially enabled.
 	return thrd;
 }
 
@@ -833,7 +833,7 @@ void _thread_stop (_thread_t *thrd) {
 void _thread_kill (_thread_t *thrd) {
 	_preempt_disable();
 	_thread_stop(thrd);
-	thrd->savedctx.sp = 0; // Set null to signal terminated.
+	thrd->savedctx = 0; // Set null to signal terminated.
 	_preempt_enable();
 }
 

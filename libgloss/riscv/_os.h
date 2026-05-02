@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-// 20250924 (c) William Fonkou Tambe
+// 20260504 (c) William Fonkou Tambe
 
 #ifndef __LIBGLOSS_RISCV__OS_H
 #define __LIBGLOSS_RISCV__OS_H
@@ -157,6 +157,17 @@ void _fifo_rst (_fifo_t *f);
 #define _sem_rst(X) _fifo_rst(X)
 
 typedef struct {
+	uintptr_t ra, sp;
+	uintptr_t t0, t1, t2, s0, s1;
+	uintptr_t a0, a1, a2, a3, a4, a5, a6, a7;
+	uintptr_t s2, s3, s4, s5, s6, s7, s8, s9;
+	uintptr_t s10, s11, t3, t4, t5, t6;
+	// Above valid only when interrupting a thread or the handling of a trap.
+	uintptr_t scratch, status, epc;
+	uintptr_t tval, tval2, cause;
+} _savedctx_t;
+
+typedef struct {
 	_dlist_t l; // Circular linked list of either running or stopped (on _waitq_t) threads.
 	enum {
 		_THREAD_STOPPED = 0,
@@ -170,31 +181,16 @@ typedef struct {
 	uintptr_t cpu; // Used by _thread_sched() to index the __runq to use.
 	bool pin; // When true, the thread does not migrate.
 	uintptr_t irq_disabled; // For this thread, when null IRQs are enabled, otherwise they are disabled.
-	struct {
-		uintptr_t ra, sp;
-		uintptr_t s0, s1, s2, s3, s4, s5;
-		uintptr_t s6, s7, s8, s9, s10, s11;
-		uintptr_t scratch; // When non-null, the saved context it points-to must be used instead.
-		uintptr_t status;
-	} savedctx; // Save area for context switching.
+	// Pointer to context-switch save area; where only following fields are used:
+	// ra, s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, scratch, status.
+	_savedctx_t *savedctx;
 } _thread_t; // Its size must be a multiple of sizeof(uintptr_t).
 
 register _thread_t *_thread_cur __asm__ ("tp");
 
-typedef struct {
-	uintptr_t ra, sp;
-	uintptr_t t0, t1, t2, s0, s1;
-	uintptr_t a0, a1, a2, a3, a4, a5, a6, a7;
-	uintptr_t s2, s3, s4, s5, s6, s7, s8, s9;
-	uintptr_t s10, s11, t3, t4, t5, t6;
-	// Above valid only when interrupting a thread or the handling of a trap.
-	uintptr_t scratch, status, epc;
-	uintptr_t tval, tval2, cause;
-} _trap_savedctx_t;
-
 // Return non-null only when handling a trap.
 #define _trap_savedctx() ({ \
-	_trap_savedctx_t *x; \
+	_savedctx_t *x; \
 	__asm__ __volatile__ ("csrr %0, mscratch\n" : "=r"(x) :: "memory"); \
 	x; })
 
@@ -269,7 +265,7 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e);
 void _thread_exit (void);
 
 #define _is_thread_stopped(X) ((X)->state == _THREAD_STOPPED)
-#define _is_thread_terminated(X) (/*_is_thread_stopped(X) &&*/ !(X)->savedctx.sp)
+#define _is_thread_terminated(X) (/*_is_thread_stopped(X) &&*/ !(X)->savedctx)
 #define _is_thread_running(X) ((X)->state == _THREAD_RUNNING)
 
 uintptr_t _ncpu (void);

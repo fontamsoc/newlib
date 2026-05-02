@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only
-   20241203 (c) William Fonkou Tambe */
+   20260504 (c) William Fonkou Tambe */
 
 #include "newlib.h"
 
@@ -147,7 +147,7 @@ _start:
   .type   __trap, @function
 __trap:
 
-  addi  sp, sp, -TRAP_SAVEDCTX_SIZE
+  addi  sp, sp, -SAVEDCTX_SIZE
 
   bnez tp, 1f
   csrrw t1, mscratch, t1 /* mscratch is non-null if interrupting the handling of a trap */
@@ -157,38 +157,38 @@ __trap:
 0:
   csrrw t1, mscratch, t1 /* restore t1 and mscratch */
 1:
-  REG_S ra, TRAP_SAVEDCTX_RA(sp)
+  REG_S ra, SAVEDCTX_RA(sp)
   /* sp is saved later */
-  REG_S t0, TRAP_SAVEDCTX_T0(sp)
-  REG_S t1, TRAP_SAVEDCTX_T1(sp)
-  REG_S t2, TRAP_SAVEDCTX_T2(sp)
-  REG_S s0, TRAP_SAVEDCTX_S0(sp)
-  REG_S s1, TRAP_SAVEDCTX_S1(sp)
-  REG_S a0, TRAP_SAVEDCTX_A0(sp)
-  REG_S a1, TRAP_SAVEDCTX_A1(sp)
-  REG_S a2, TRAP_SAVEDCTX_A2(sp)
-  REG_S a3, TRAP_SAVEDCTX_A3(sp)
-  REG_S a4, TRAP_SAVEDCTX_A4(sp)
-  REG_S a5, TRAP_SAVEDCTX_A5(sp)
-  REG_S a6, TRAP_SAVEDCTX_A6(sp)
-  REG_S a7, TRAP_SAVEDCTX_A7(sp)
-  REG_S s2, TRAP_SAVEDCTX_S2(sp)
-  REG_S s3, TRAP_SAVEDCTX_S3(sp)
-  REG_S s4, TRAP_SAVEDCTX_S4(sp)
-  REG_S s5, TRAP_SAVEDCTX_S5(sp)
-  REG_S s6, TRAP_SAVEDCTX_S6(sp)
-  REG_S s7, TRAP_SAVEDCTX_S7(sp)
-  REG_S s8, TRAP_SAVEDCTX_S8(sp)
-  REG_S s9, TRAP_SAVEDCTX_S9(sp)
-  REG_S s10, TRAP_SAVEDCTX_S10(sp)
-  REG_S s11, TRAP_SAVEDCTX_S11(sp)
-  REG_S t3, TRAP_SAVEDCTX_T3(sp)
-  REG_S t4, TRAP_SAVEDCTX_T4(sp)
-  REG_S t5, TRAP_SAVEDCTX_T5(sp)
-  REG_S t6, TRAP_SAVEDCTX_T6(sp)
+  REG_S t0, SAVEDCTX_T0(sp)
+  REG_S t1, SAVEDCTX_T1(sp)
+  REG_S t2, SAVEDCTX_T2(sp)
+  REG_S s0, SAVEDCTX_S0(sp)
+  REG_S s1, SAVEDCTX_S1(sp)
+  REG_S a0, SAVEDCTX_A0(sp)
+  REG_S a1, SAVEDCTX_A1(sp)
+  REG_S a2, SAVEDCTX_A2(sp)
+  REG_S a3, SAVEDCTX_A3(sp)
+  REG_S a4, SAVEDCTX_A4(sp)
+  REG_S a5, SAVEDCTX_A5(sp)
+  REG_S a6, SAVEDCTX_A6(sp)
+  REG_S a7, SAVEDCTX_A7(sp)
+  REG_S s2, SAVEDCTX_S2(sp)
+  REG_S s3, SAVEDCTX_S3(sp)
+  REG_S s4, SAVEDCTX_S4(sp)
+  REG_S s5, SAVEDCTX_S5(sp)
+  REG_S s6, SAVEDCTX_S6(sp)
+  REG_S s7, SAVEDCTX_S7(sp)
+  REG_S s8, SAVEDCTX_S8(sp)
+  REG_S s9, SAVEDCTX_S9(sp)
+  REG_S s10, SAVEDCTX_S10(sp)
+  REG_S s11, SAVEDCTX_S11(sp)
+  REG_S t3, SAVEDCTX_T3(sp)
+  REG_S t4, SAVEDCTX_T4(sp)
+  REG_S t5, SAVEDCTX_T5(sp)
+  REG_S t6, SAVEDCTX_T6(sp)
 
-  addi  t0, sp, TRAP_SAVEDCTX_SIZE
-  REG_S t0, TRAP_SAVEDCTX_SP(sp)
+  addi  t0, sp, SAVEDCTX_SIZE
+  REG_S t0, SAVEDCTX_SP(sp)
 
   csrr  t1, mscratch
 2:
@@ -197,12 +197,12 @@ __trap:
   csrr  t4, mtval
   csrr  t5, mtval2
   csrr  t6, mcause
-  REG_S t1, TRAP_SAVEDCTX_SCRATCH(sp)
-  REG_S t2, TRAP_SAVEDCTX_STATUS(sp)
-  REG_S t3, TRAP_SAVEDCTX_EPC(sp)
-  REG_S t4, TRAP_SAVEDCTX_TVAL(sp)
-  REG_S t5, TRAP_SAVEDCTX_TVAL2(sp)
-  REG_S t6, TRAP_SAVEDCTX_CAUSE(sp)
+  REG_S t1, SAVEDCTX_SCRATCH(sp)
+  REG_S t2, SAVEDCTX_STATUS(sp)
+  REG_S t3, SAVEDCTX_EPC(sp)
+  REG_S t4, SAVEDCTX_TVAL(sp)
+  REG_S t5, SAVEDCTX_TVAL2(sp)
+  REG_S t6, SAVEDCTX_CAUSE(sp)
 
   csrw mscratch, sp /* _trap_savedctx */
 
@@ -226,52 +226,52 @@ __trap:
   call __trap_exc_inv
 __trap_ret: # Label used from __switchctx().
 1: # Skip to next instruction if true was returned.
-  REG_L t3, TRAP_SAVEDCTX_EPC(sp)
+  REG_L t3, SAVEDCTX_EPC(sp)
   beqz a0, 0f
   addi t3, t3, 4
 0:
   csrw mepc, t3
-  REG_L t2, TRAP_SAVEDCTX_STATUS(sp)
+  REG_L t2, SAVEDCTX_STATUS(sp)
   csrw mstatus, t2
-  REG_L t1, TRAP_SAVEDCTX_SCRATCH(sp)
+  REG_L t1, SAVEDCTX_SCRATCH(sp)
   csrw mscratch, t1
 
   bnez tp, 0f
   beqz t1, 1f
 0:
-  REG_L ra, TRAP_SAVEDCTX_RA(sp)
+  REG_L ra, SAVEDCTX_RA(sp)
   /* sp is restored later */
-  REG_L t0, TRAP_SAVEDCTX_T0(sp)
-  REG_L t1, TRAP_SAVEDCTX_T1(sp)
-  REG_L t2, TRAP_SAVEDCTX_T2(sp)
-  REG_L s0, TRAP_SAVEDCTX_S0(sp)
-  REG_L s1, TRAP_SAVEDCTX_S1(sp)
-  REG_L a0, TRAP_SAVEDCTX_A0(sp)
-  REG_L a1, TRAP_SAVEDCTX_A1(sp)
-  REG_L a2, TRAP_SAVEDCTX_A2(sp)
-  REG_L a3, TRAP_SAVEDCTX_A3(sp)
-  REG_L a4, TRAP_SAVEDCTX_A4(sp)
-  REG_L a5, TRAP_SAVEDCTX_A5(sp)
-  REG_L a6, TRAP_SAVEDCTX_A6(sp)
-  REG_L a7, TRAP_SAVEDCTX_A7(sp)
-  REG_L s2, TRAP_SAVEDCTX_S2(sp)
-  REG_L s3, TRAP_SAVEDCTX_S3(sp)
-  REG_L s4, TRAP_SAVEDCTX_S4(sp)
-  REG_L s5, TRAP_SAVEDCTX_S5(sp)
-  REG_L s6, TRAP_SAVEDCTX_S6(sp)
-  REG_L s7, TRAP_SAVEDCTX_S7(sp)
-  REG_L s8, TRAP_SAVEDCTX_S8(sp)
-  REG_L s9, TRAP_SAVEDCTX_S9(sp)
-  REG_L s10, TRAP_SAVEDCTX_S10(sp)
-  REG_L s11, TRAP_SAVEDCTX_S11(sp)
-  REG_L t3, TRAP_SAVEDCTX_T3(sp)
-  REG_L t4, TRAP_SAVEDCTX_T4(sp)
-  REG_L t5, TRAP_SAVEDCTX_T5(sp)
-  REG_L t6, TRAP_SAVEDCTX_T6(sp)
-  REG_L sp, TRAP_SAVEDCTX_SP(sp)
+  REG_L t0, SAVEDCTX_T0(sp)
+  REG_L t1, SAVEDCTX_T1(sp)
+  REG_L t2, SAVEDCTX_T2(sp)
+  REG_L s0, SAVEDCTX_S0(sp)
+  REG_L s1, SAVEDCTX_S1(sp)
+  REG_L a0, SAVEDCTX_A0(sp)
+  REG_L a1, SAVEDCTX_A1(sp)
+  REG_L a2, SAVEDCTX_A2(sp)
+  REG_L a3, SAVEDCTX_A3(sp)
+  REG_L a4, SAVEDCTX_A4(sp)
+  REG_L a5, SAVEDCTX_A5(sp)
+  REG_L a6, SAVEDCTX_A6(sp)
+  REG_L a7, SAVEDCTX_A7(sp)
+  REG_L s2, SAVEDCTX_S2(sp)
+  REG_L s3, SAVEDCTX_S3(sp)
+  REG_L s4, SAVEDCTX_S4(sp)
+  REG_L s5, SAVEDCTX_S5(sp)
+  REG_L s6, SAVEDCTX_S6(sp)
+  REG_L s7, SAVEDCTX_S7(sp)
+  REG_L s8, SAVEDCTX_S8(sp)
+  REG_L s9, SAVEDCTX_S9(sp)
+  REG_L s10, SAVEDCTX_S10(sp)
+  REG_L s11, SAVEDCTX_S11(sp)
+  REG_L t3, SAVEDCTX_T3(sp)
+  REG_L t4, SAVEDCTX_T4(sp)
+  REG_L t5, SAVEDCTX_T5(sp)
+  REG_L t6, SAVEDCTX_T6(sp)
+  REG_L sp, SAVEDCTX_SP(sp)
   mret
 1:
-  addi sp, sp, TRAP_SAVEDCTX_SIZE
+  addi sp, sp, SAVEDCTX_SIZE
   csrs mstatus, 0x8 /* Set mstatus.mie to enable IRQs */
   wfi
 
@@ -287,29 +287,31 @@ __switchctx:
 
   beqz tp, 0f
 
+  addi  sp, sp, -SAVEDCTX_SIZE
+  REG_S sp, THREAD_SAVEDCTX(tp)
+
   csrr  t1, mscratch
-  REG_S t1, THREAD_SAVEDCTX_SCRATCH(tp)
-  /* If mscratch is non-null, skip saving the other THREAD_SAVEDCTX_*
+  REG_S t1, SAVEDCTX_SCRATCH(sp)
+  /* If mscratch is non-null, skip saving other SAVEDCTX_*
      as the thread will be restored from its trap context. */
   bnez t1, 0f
 
-  REG_S ra, THREAD_SAVEDCTX_RA(tp)
-  REG_S sp, THREAD_SAVEDCTX_SP(tp)
-  REG_S s0, THREAD_SAVEDCTX_S0(tp)
-  REG_S s1, THREAD_SAVEDCTX_S1(tp)
-  REG_S s2, THREAD_SAVEDCTX_S2(tp)
-  REG_S s3, THREAD_SAVEDCTX_S3(tp)
-  REG_S s4, THREAD_SAVEDCTX_S4(tp)
-  REG_S s5, THREAD_SAVEDCTX_S5(tp)
-  REG_S s6, THREAD_SAVEDCTX_S6(tp)
-  REG_S s7, THREAD_SAVEDCTX_S7(tp)
-  REG_S s8, THREAD_SAVEDCTX_S8(tp)
-  REG_S s9, THREAD_SAVEDCTX_S9(tp)
-  REG_S s10, THREAD_SAVEDCTX_S10(tp)
-  REG_S s11, THREAD_SAVEDCTX_S11(tp)
+  REG_S ra, SAVEDCTX_RA(sp)
+  REG_S s0, SAVEDCTX_S0(sp)
+  REG_S s1, SAVEDCTX_S1(sp)
+  REG_S s2, SAVEDCTX_S2(sp)
+  REG_S s3, SAVEDCTX_S3(sp)
+  REG_S s4, SAVEDCTX_S4(sp)
+  REG_S s5, SAVEDCTX_S5(sp)
+  REG_S s6, SAVEDCTX_S6(sp)
+  REG_S s7, SAVEDCTX_S7(sp)
+  REG_S s8, SAVEDCTX_S8(sp)
+  REG_S s9, SAVEDCTX_S9(sp)
+  REG_S s10, SAVEDCTX_S10(sp)
+  REG_S s11, SAVEDCTX_S11(sp)
 
   csrr  t2, mstatus
-  REG_S t2, THREAD_SAVEDCTX_STATUS(tp)
+  REG_S t2, SAVEDCTX_STATUS(sp)
 0:
   bnez a0, 0f
   csrr t0, mhartid
@@ -323,20 +325,21 @@ __switchctx:
 0:
   mv tp, a0
 
-  REG_L t1, THREAD_SAVEDCTX_SCRATCH(tp)
+  REG_L sp, THREAD_SAVEDCTX(tp)
+
+  REG_L t1, SAVEDCTX_SCRATCH(sp)
   /* If the thread mscratch is non-null, restore from trap context */
   beqz t1, 0f
   mv sp, t1
   mv a0, x0
   j __trap_ret
 0:
-  REG_L t2, THREAD_SAVEDCTX_STATUS(tp)
+  REG_L t2, SAVEDCTX_STATUS(sp)
 
-  REG_L ra, THREAD_SAVEDCTX_RA(tp)
-  REG_L sp, THREAD_SAVEDCTX_SP(tp)
+  REG_L ra, SAVEDCTX_RA(sp)
 
   csrw mscratch, t1
-  csrw mstatus, t2
+  csrw mstatus,  t2
 
   REG_L t3, THREAD_CPU(tp)
   /* If the thread cpu number is negative, restore
@@ -345,22 +348,24 @@ __switchctx:
   neg t3, t3
   addi t3, t3, -1
   REG_S t3, THREAD_CPU(tp)
-  REG_L t4, THREAD_SAVEDCTX_S1(tp)
-  REG_L a0, THREAD_SAVEDCTX_S0(tp)
+  REG_L t4, SAVEDCTX_S1(sp)
+  REG_L a0, SAVEDCTX_S0(sp)
+  addi sp, sp, SAVEDCTX_SIZE
   jr t4
 0:
-  REG_L s0, THREAD_SAVEDCTX_S0(tp)
-  REG_L s1, THREAD_SAVEDCTX_S1(tp)
-  REG_L s2, THREAD_SAVEDCTX_S2(tp)
-  REG_L s3, THREAD_SAVEDCTX_S3(tp)
-  REG_L s4, THREAD_SAVEDCTX_S4(tp)
-  REG_L s5, THREAD_SAVEDCTX_S5(tp)
-  REG_L s6, THREAD_SAVEDCTX_S6(tp)
-  REG_L s7, THREAD_SAVEDCTX_S7(tp)
-  REG_L s8, THREAD_SAVEDCTX_S8(tp)
-  REG_L s9, THREAD_SAVEDCTX_S9(tp)
-  REG_L s10, THREAD_SAVEDCTX_S10(tp)
-  REG_L s11, THREAD_SAVEDCTX_S11(tp)
+  REG_L s0, SAVEDCTX_S0(sp)
+  REG_L s1, SAVEDCTX_S1(sp)
+  REG_L s2, SAVEDCTX_S2(sp)
+  REG_L s3, SAVEDCTX_S3(sp)
+  REG_L s4, SAVEDCTX_S4(sp)
+  REG_L s5, SAVEDCTX_S5(sp)
+  REG_L s6, SAVEDCTX_S6(sp)
+  REG_L s7, SAVEDCTX_S7(sp)
+  REG_L s8, SAVEDCTX_S8(sp)
+  REG_L s9, SAVEDCTX_S9(sp)
+  REG_L s10, SAVEDCTX_S10(sp)
+  REG_L s11, SAVEDCTX_S11(sp)
+  addi sp, sp, SAVEDCTX_SIZE
   ret
 
   .size __switchctx, .-__switchctx

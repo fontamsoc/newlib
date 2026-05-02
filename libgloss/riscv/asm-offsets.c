@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-// 20241203 (c) William Fonkou Tambe
+// 20260504 (c) William Fonkou Tambe
 
 // This program is used to generate definitions needed by
 // assembly language modules.
@@ -21,64 +21,47 @@
 #include "_os.h"
 
 void main (void) {
-	OFFSET(TRAP_SAVEDCTX_RA,  _trap_savedctx_t, ra);
-	OFFSET(TRAP_SAVEDCTX_SP,  _trap_savedctx_t, sp);
-	OFFSET(TRAP_SAVEDCTX_T0,  _trap_savedctx_t, t0);
-	OFFSET(TRAP_SAVEDCTX_T1,  _trap_savedctx_t, t1);
-	OFFSET(TRAP_SAVEDCTX_T2,  _trap_savedctx_t, t2);
-	OFFSET(TRAP_SAVEDCTX_S0,  _trap_savedctx_t, s0);
-	OFFSET(TRAP_SAVEDCTX_S1,  _trap_savedctx_t, s1);
-	OFFSET(TRAP_SAVEDCTX_A0,  _trap_savedctx_t, a0);
-	OFFSET(TRAP_SAVEDCTX_A1,  _trap_savedctx_t, a1);
-	OFFSET(TRAP_SAVEDCTX_A2,  _trap_savedctx_t, a2);
-	OFFSET(TRAP_SAVEDCTX_A3,  _trap_savedctx_t, a3);
-	OFFSET(TRAP_SAVEDCTX_A4,  _trap_savedctx_t, a4);
-	OFFSET(TRAP_SAVEDCTX_A5,  _trap_savedctx_t, a5);
-	OFFSET(TRAP_SAVEDCTX_A6,  _trap_savedctx_t, a6);
-	OFFSET(TRAP_SAVEDCTX_A7,  _trap_savedctx_t, a7);
-	OFFSET(TRAP_SAVEDCTX_S2,  _trap_savedctx_t, s2);
-	OFFSET(TRAP_SAVEDCTX_S3,  _trap_savedctx_t, s3);
-	OFFSET(TRAP_SAVEDCTX_S4,  _trap_savedctx_t, s4);
-	OFFSET(TRAP_SAVEDCTX_S5,  _trap_savedctx_t, s5);
-	OFFSET(TRAP_SAVEDCTX_S6,  _trap_savedctx_t, s6);
-	OFFSET(TRAP_SAVEDCTX_S7,  _trap_savedctx_t, s7);
-	OFFSET(TRAP_SAVEDCTX_S8,  _trap_savedctx_t, s8);
-	OFFSET(TRAP_SAVEDCTX_S9,  _trap_savedctx_t, s9);
-	OFFSET(TRAP_SAVEDCTX_S10, _trap_savedctx_t, s10);
-	OFFSET(TRAP_SAVEDCTX_S11, _trap_savedctx_t, s11);
-	OFFSET(TRAP_SAVEDCTX_T3,  _trap_savedctx_t, t3);
-	OFFSET(TRAP_SAVEDCTX_T4,  _trap_savedctx_t, t4);
-	OFFSET(TRAP_SAVEDCTX_T5,  _trap_savedctx_t, t5);
-	OFFSET(TRAP_SAVEDCTX_T6,  _trap_savedctx_t, t6);
+	OFFSET(SAVEDCTX_RA,  _savedctx_t, ra);
+	OFFSET(SAVEDCTX_SP,  _savedctx_t, sp);
+	OFFSET(SAVEDCTX_T0,  _savedctx_t, t0);
+	OFFSET(SAVEDCTX_T1,  _savedctx_t, t1);
+	OFFSET(SAVEDCTX_T2,  _savedctx_t, t2);
+	OFFSET(SAVEDCTX_S0,  _savedctx_t, s0);
+	OFFSET(SAVEDCTX_S1,  _savedctx_t, s1);
+	OFFSET(SAVEDCTX_A0,  _savedctx_t, a0);
+	OFFSET(SAVEDCTX_A1,  _savedctx_t, a1);
+	OFFSET(SAVEDCTX_A2,  _savedctx_t, a2);
+	OFFSET(SAVEDCTX_A3,  _savedctx_t, a3);
+	OFFSET(SAVEDCTX_A4,  _savedctx_t, a4);
+	OFFSET(SAVEDCTX_A5,  _savedctx_t, a5);
+	OFFSET(SAVEDCTX_A6,  _savedctx_t, a6);
+	OFFSET(SAVEDCTX_A7,  _savedctx_t, a7);
+	OFFSET(SAVEDCTX_S2,  _savedctx_t, s2);
+	OFFSET(SAVEDCTX_S3,  _savedctx_t, s3);
+	OFFSET(SAVEDCTX_S4,  _savedctx_t, s4);
+	OFFSET(SAVEDCTX_S5,  _savedctx_t, s5);
+	OFFSET(SAVEDCTX_S6,  _savedctx_t, s6);
+	OFFSET(SAVEDCTX_S7,  _savedctx_t, s7);
+	OFFSET(SAVEDCTX_S8,  _savedctx_t, s8);
+	OFFSET(SAVEDCTX_S9,  _savedctx_t, s9);
+	OFFSET(SAVEDCTX_S10, _savedctx_t, s10);
+	OFFSET(SAVEDCTX_S11, _savedctx_t, s11);
+	OFFSET(SAVEDCTX_T3,  _savedctx_t, t3);
+	OFFSET(SAVEDCTX_T4,  _savedctx_t, t4);
+	OFFSET(SAVEDCTX_T5,  _savedctx_t, t5);
+	OFFSET(SAVEDCTX_T6,  _savedctx_t, t6);
 
-	OFFSET(TRAP_SAVEDCTX_SCRATCH, _trap_savedctx_t, scratch);
-	OFFSET(TRAP_SAVEDCTX_STATUS,  _trap_savedctx_t, status);
-	OFFSET(TRAP_SAVEDCTX_EPC,     _trap_savedctx_t, epc);
-	OFFSET(TRAP_SAVEDCTX_TVAL,    _trap_savedctx_t, tval);
-	OFFSET(TRAP_SAVEDCTX_TVAL2,   _trap_savedctx_t, tval2);
-	OFFSET(TRAP_SAVEDCTX_CAUSE,   _trap_savedctx_t, cause);
+	OFFSET(SAVEDCTX_SCRATCH, _savedctx_t, scratch);
+	OFFSET(SAVEDCTX_STATUS,  _savedctx_t, status);
+	OFFSET(SAVEDCTX_EPC,     _savedctx_t, epc);
+	OFFSET(SAVEDCTX_TVAL,    _savedctx_t, tval);
+	OFFSET(SAVEDCTX_TVAL2,   _savedctx_t, tval2);
+	OFFSET(SAVEDCTX_CAUSE,   _savedctx_t, cause);
 
-	DEFINE(TRAP_SAVEDCTX_SIZE, sizeof(_trap_savedctx_t));
+	DEFINE(SAVEDCTX_SIZE, sizeof(_savedctx_t));
 
-	OFFSET(THREAD_CPU, _thread_t, cpu);
-
-	OFFSET(THREAD_SAVEDCTX_RA,  _thread_t, savedctx.ra);
-	OFFSET(THREAD_SAVEDCTX_SP,  _thread_t, savedctx.sp);
-	OFFSET(THREAD_SAVEDCTX_S0,  _thread_t, savedctx.s0);
-	OFFSET(THREAD_SAVEDCTX_S1,  _thread_t, savedctx.s1);
-	OFFSET(THREAD_SAVEDCTX_S2,  _thread_t, savedctx.s2);
-	OFFSET(THREAD_SAVEDCTX_S3,  _thread_t, savedctx.s3);
-	OFFSET(THREAD_SAVEDCTX_S4,  _thread_t, savedctx.s4);
-	OFFSET(THREAD_SAVEDCTX_S5,  _thread_t, savedctx.s5);
-	OFFSET(THREAD_SAVEDCTX_S6,  _thread_t, savedctx.s6);
-	OFFSET(THREAD_SAVEDCTX_S7,  _thread_t, savedctx.s7);
-	OFFSET(THREAD_SAVEDCTX_S8,  _thread_t, savedctx.s8);
-	OFFSET(THREAD_SAVEDCTX_S9,  _thread_t, savedctx.s9);
-	OFFSET(THREAD_SAVEDCTX_S10, _thread_t, savedctx.s10);
-	OFFSET(THREAD_SAVEDCTX_S11, _thread_t, savedctx.s11);
-
-	OFFSET(THREAD_SAVEDCTX_SCRATCH, _thread_t, savedctx.scratch);
-	OFFSET(THREAD_SAVEDCTX_STATUS,  _thread_t, savedctx.status);
+	OFFSET(THREAD_CPU,      _thread_t, cpu);
+	OFFSET(THREAD_SAVEDCTX, _thread_t, savedctx);
 
 	DEFINE(THREAD_STRUCT_SIZE, sizeof(_thread_t));
 }
