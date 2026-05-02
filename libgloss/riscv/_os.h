@@ -6,6 +6,7 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <stdbool.h>
 
 // Cast a member of a structure out to the containing structure.
