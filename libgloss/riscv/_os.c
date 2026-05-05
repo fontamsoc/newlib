@@ -120,7 +120,7 @@ void _timer_arm (_timer_t *t, _date_t e) {
 	_preempt_disable();
 	uintptr_t coreid = _cpuid();
 	if (t->l.prev) {
-		if (!t->l.next)
+		if (!t->l.next || t->cpu != coreid)
 			_oops();
 		if (t->l.next != &t->l) {
 			if (t == __timer_list[coreid])
@@ -129,6 +129,7 @@ void _timer_arm (_timer_t *t, _date_t e) {
 		} else
 			__timer_list[coreid] = 0;
 	}
+	t->cpu = coreid;
 	t->e = e;
 	if (__timer_list[coreid]) {
 		uintptr_t uh = 1; // Determine whether to update __timer_list[coreid].
@@ -160,6 +161,8 @@ void _timer_disarm (_timer_t *t) {
 		return;
 	_preempt_disable();
 	uintptr_t coreid = _cpuid();
+	if (t->cpu != coreid)
+		_oops();
 	if (t->l.next != &t->l) {
 		if (t == __timer_list[coreid]) {
 			__timer_list[coreid] = container_of(t->l.next, _timer_t, l);

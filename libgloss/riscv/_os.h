@@ -82,6 +82,7 @@ typedef uint64_t _date_t;
 typedef struct _timer {
 	_dlist_t l;
 	_date_t e; // Expiration date.
+	uintptr_t cpu; // A _timer can only be re-armed or dis-armed by the CPU that armed it.
 	void (*f)(struct _timer *);
 } _timer_t;
 
