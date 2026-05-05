@@ -154,8 +154,10 @@ void _timer_arm (_timer_t *t, _date_t e) {
 	_preempt_enable();
 }
 
-// Remove a _timer from __timer_list[_cpuid()].
+// Remove a _timer from __timer_list[_cpuid()]; does nothing if already removed.
 void _timer_disarm (_timer_t *t) {
+	if (!t->l.prev)
+		return;
 	_preempt_disable();
 	uintptr_t coreid = _cpuid();
 	if (t->l.next != &t->l) {
@@ -599,8 +601,10 @@ static void __thread_wakeup (_timer_t *t) {
 		scheddate = (clkcycles + (schedlrhz / runq->cnt));
 		_timer_arm(&runq->schedlr, scheddate);
 		runq->scheddate = scheddate;
-	} else
+	} else {
+		_timer_disarm(&runq->schedlr);
 		runq->scheddate = 0;
+	}
 	if (curthrd && curscheddate > clkcycles)
 		curthrd->timeleft = (curscheddate - clkcycles);
 	__switchctx(thrd);
@@ -898,8 +902,10 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 			scheddate += (schedlrhz / runq->cnt);
 		_timer_arm(&runq->schedlr, scheddate);
 		runq->scheddate = scheddate;
-	} else
+	} else {
+		_timer_disarm(&runq->schedlr);
 		runq->scheddate = 0;
+	}
 	__switchctx(nxtthrd); // Will halt if nxtthrd is null.
 	_preempt_enable();
 }
@@ -971,11 +977,15 @@ static void __thread_cur_preempt (uintptr_t cpu) {
 				scheddate += (schedlrhz / runq->cnt);
 			_timer_arm(&runq->schedlr, scheddate);
 			runq->scheddate = scheddate;
-		} else
+		} else {
+			_timer_disarm(&runq->schedlr);
 			runq->scheddate = 0;
+		}
 		___switchctx(nxtthrd);
-	} else
+	} else {
+		_timer_disarm(&runq->schedlr);
 		runq->scheddate = 0;
+	}
 	done:;
 }
 
