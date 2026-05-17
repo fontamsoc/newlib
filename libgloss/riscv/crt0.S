@@ -38,8 +38,7 @@ _start:
 0:REG_L t0, 0(s1)
   bne   s0, t0, 0b
   # Use temporary trap stack right below the stack currently used by CPU 0.
-  la    sp, __heap_end
-  REG_L sp, 0(sp)
+  REG_L sp,__heap_end
   addi  sp, sp, -TRAP_STACK_SIZE
   mv tp, x0
   call __init_secondary_cpu
@@ -106,11 +105,9 @@ _start:
   andi  sp, sp, ~15 # RISC-V required stack alignment.
 
   # Init __heap_ptr to _end, and __heap_end to the value of register sp.
-  la    t0, __heap_ptr
   la    t1, _end
-  REG_S t1, 0(t0)
-  la    t0, __heap_end
-  REG_S sp, 0(t0)
+  REG_S t1, __heap_ptr, t0
+  REG_S sp, __heap_end, t0
 
   mv a0, tp
   call __init_multithreading
