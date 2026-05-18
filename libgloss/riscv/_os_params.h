@@ -12,7 +12,7 @@
 // Default clock cycle count it takes to run all threads in a CPU runqueue;
 // in other words, a preempted thread is guaranteed to resume in less than
 // SCHEDLRHZ clock cycles.
-#define SCHEDLRHZ _MSECS(100)
+#define SCHEDLRHZ _MSECS(50)
 
 #define SERIAL0_ADDR (0xf80 /* By convention, the first UART is located at 0xf80 */)
 
