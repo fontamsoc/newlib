@@ -171,7 +171,7 @@ void _timer_disarm (_timer_t *t) {
 		_dlist_del(t->l.prev, t->l.next);
 	} else
 		__timer_list[coreid] = 0;
-	_dlist_clr(&t->l);
+	t->l = _DLIST_NIL;
 	if (!__timer_list[coreid])
 		__asm__ __volatile__ ("csrc mie, %0\n" :: "r"(0x80) : "memory"); // Clear mie.mtie.
 	_preempt_enable();
@@ -214,7 +214,7 @@ void _irq_unregister (_irq_t *i) {
 		_dlist_del(i->l.prev, i->l.next);
 	} else
 		__irqs.l = 0;
-	_dlist_clr(&i->l);
+	i->l = _DLIST_NIL;
 	_xchg(&__irqs.lock, 0);
 	_preempt_enable();
 }
@@ -260,7 +260,7 @@ bool __trap_irq (void) {
 						__timer_list[coreid] = 0;
 						__asm__ __volatile__ ("csrc mie, %0\n" :: "r"(0x80) : "memory"); // Clear mie.mtie.
 					}
-					_dlist_clr(&t->l);
+					t->l = _DLIST_NIL;
 					t->f(t);
 				} else
 					break;
@@ -354,17 +354,6 @@ void _mutex_unlock_recursive (_mutex_t *m) {
 		return;
 	}
 	_mutex_unlock(m);
-}
-
-// Initialize a _fifo_t for use; if buf is null, the _fifo_t gets used as a semaphore.
-void _fifo_init (_fifo_t *f, void *buf, size_t sz) {
-	f->lock = 0;
-	f->widx = 0;
-	f->ridx = 0;
-	f->buf = buf;
-	f->sz = sz;
-	f->wwaitq = (_waitq_t)_WAITQ_CLR;
-	f->rwaitq = (_waitq_t)_WAITQ_CLR;
 }
 
 // Add data to a _fifo_t.
@@ -557,7 +546,7 @@ static struct __runq {
 	uintptr_t cnt; // Number of _thread_t in the circular linked list.
 	_date_t scheddate; // Date of next timeslice preemption when non-null.
 	_timer_t schedlr; // Used for timeslice preemption of _thread_cur.
-} __runq[NCPU] = {[0 ... NCPU-1] = {0, 0, 0, 0, 0, _TIMER_CLR}};
+} __runq[NCPU] = {[0 ... NCPU-1] = {0, 0, 0, 0, 0, _TIMER_NIL}};
 
 static uintptr_t schedlrhz; // Get set to the value of SCHEDLRHZ.
 
@@ -680,7 +669,7 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 	memcpy (tp, __tdata_start, tdatasz);
 	memset ((tp + tdatasz), 0, (__tbss_end - __tbss_start));
 	_thread_t *thrd = (tp - sizeof(_thread_t));
-	_dlist_clr(&thrd->l);
+	thrd->l = _DLIST_NIL;
 	thrd->state = _THREAD_STOPPED;
 	thrd->wq = 0;
 	_timer_init(&thrd->z, __thread_wakeup);
@@ -829,7 +818,7 @@ void _thread_stop (_thread_t *thrd) {
 			while (thrd == runq->cur);
 		}
 		thrd->state = _THREAD_STOPPED;
-		_dlist_clr(&thrd->l);
+		thrd->l = _DLIST_NIL;
 	} else if (thrd->state != _THREAD_STOPPED)
 		_oops();
 	_preempt_enable();
@@ -895,7 +884,7 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 		}
 		_xchg(&wq->lock, 0);
 	} else
-		_dlist_clr(&_thread_cur->l);
+		_thread_cur->l = _DLIST_NIL;
 	if (runq->cnt > 1) {
 		_date_t scheddate = _clkcycles();
 		if (nxtthrd->timeleft) {
