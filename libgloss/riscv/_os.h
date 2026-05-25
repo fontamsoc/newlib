@@ -52,9 +52,9 @@ typedef struct _dlist {
 
 #define _DLIST_NIL (_dlist_t){0, 0}
 
-#define _dlist_init(L) ({ \
-	(L)->next = L; \
-	(L)->prev = L; })
+#define _dlist_init(X) ({ \
+	(X)->next = (X); \
+	(X)->prev = (X); })
 
 // Insert an entry between two known consecutive entries.
 static inline void _dlist_add (_dlist_t *l, _dlist_t *prev, _dlist_t *next) {
@@ -80,11 +80,13 @@ typedef struct _timer {
 	void (*f)(struct _timer *);
 } _timer_t;
 
-#define _TIMER_NIL (_timer_t){_DLIST_NIL, 0, 0}
+#define _TIMER_NIL (_timer_t){_DLIST_NIL, 0, 0, (void *)0}
 
-#define _timer_init(T, F) ({ \
-	(T)->l = _DLIST_NIL; \
-	(T)->f = F; })
+#define _TIMER_DEF(X, F) _timer X = {_DLIST_NIL, 0, 0, (F)}
+
+#define _timer_init(X, F) ({ \
+	(X)->l = _DLIST_NIL; \
+	(X)->f = F; })
 
 void _timer_arm (_timer_t *t, _date_t e);
 void _timer_disarm (_timer_t *t);
@@ -97,10 +99,12 @@ typedef struct _irq {
 
 #define _IRQ_NIL (_irq_t){_DLIST_NIL, 0, 0}
 
-#define _irq_init(I, N, F) ({ \
-	(I)->l = _DLIST_NIL; \
-	(I)->n = N; \
-	(I)->f = F; })
+#define _IRQ_DEF(X, N, F) _irq_t X = {_DLIST_NIL, (N), (F)}
+
+#define _irq_init(X, N, F) ({ \
+	(X)->l = _DLIST_NIL; \
+	(X)->n = N; \
+	(X)->f = F; })
 
 void _irq_register (_irq_t *i);
 void _irq_unregister (_irq_t *i);
@@ -137,12 +141,12 @@ typedef struct {
 	_waitq_t rwaitq; // Used by _thread_t(s) waiting from _fifo_get().
 } _fifo_t;
 
-#define _fifo_init(F, B, S) ({ \
-	(F)->lock = 0; \
-	(F)->widx = 0; (F)->ridx = 0; \
-	(F)->buf = B; (F)->sz = S; \
-	(F)->wwaitq = _WAITQ_NIL; \
-	(F)->rwaitq = _WAITQ_NIL; })
+#define _fifo_init(X, B, S) ({ \
+	_xchg(&(X)->lock, 0); \
+	(X)->widx = 0; (X)->ridx = 0; \
+	(X)->buf = B; (X)->sz = S; \
+	(X)->wwaitq = _WAITQ_NIL; \
+	(X)->rwaitq = _WAITQ_NIL; })
 
 size_t _fifo_put (_fifo_t *f, void *buf, size_t sz, _date_t timeout);
 size_t _fifo_get (_fifo_t *f, void *buf, size_t sz, bool peek, _date_t timeout);
@@ -151,7 +155,7 @@ size_t _fifo_usage (_fifo_t *f);
 void _fifo_rst (_fifo_t *f);
 
 #define _sem_t _fifo_t
-#define _SEM_DEF(X, N, I) _sem_t X = {0, I, 0, 0, N, _WAITQ_NIL, _WAITQ_NIL}; static_assert(((I) <= (N)), "I > N")
+#define _SEM_DEF(X, N, I) _sem_t X = {0, (I), 0, 0, (N), _WAITQ_NIL, _WAITQ_NIL}; static_assert(((I) <= (N)), "I > N")
 #define _sem_init(X, N, I) ({ if ((I) > (N)) _oops(); _fifo_init((X), 0, (N)); (void)((X)->widx = (I)); })
 #define _sem_put(X, T) ({ size_t ret = 1; if (!_fifo_put((X), 0, 1, (T))) ret = 0; ret; })
 #define _sem_get(X, T) ({ size_t ret = 1; if (!_fifo_get((X), 0, 1, false, (T))) ret = 0; ret; })
@@ -207,22 +211,22 @@ register _thread_t *_thread_cur __asm__ ("tp");
 
 _date_t _clkcycles (void);
 
-#define _SECS(X) ({ \
-	_date_t x = _clkfreq(); \
-	x = ((X)*_clkfreq()); \
-	x; })
-#define _MSECS(X) ({ \
-	_date_t x = _clkfreq(); \
-	x = ((x >= 1000) ? ((X)*(x/1000)) : (((X)*x)/1000)); \
-	x; })
-#define _USECS(X) ({ \
-	_date_t x = _clkfreq(); \
-	x = ((x >= 1000000) ? ((X)*(x/1000000)) : (((X)*x)/1000000)); \
-	x; })
-#define _NSECS(X) ({ \
-	_date_t x = _clkfreq(); \
-	x = ((x >= 1000000000) ? ((X)*(x/1000000000)) : (((X)*x)/1000000000)); \
-	x; })
+#define _SECS(D) ({ \
+	_date_t d = _clkfreq(); \
+	d = ((D)*_clkfreq()); \
+	d; })
+#define _MSECS(D) ({ \
+	_date_t d = _clkfreq(); \
+	d = ((d >= 1000) ? ((D)*(d/1000)) : (((D)*d)/1000)); \
+	d; })
+#define _USECS(D) ({ \
+	_date_t d = _clkfreq(); \
+	d = ((d >= 1000000) ? ((D)*(d/1000000)) : (((D)*d)/1000000)); \
+	d; })
+#define _NSECS(D) ({ \
+	_date_t d = _clkfreq(); \
+	d = ((d >= 1000000000) ? ((D)*(d/1000000000)) : (((D)*d)/1000000000)); \
+	d; })
 
 // Print diagnosis info and shutdown.
 #define _oops() ({ \
@@ -244,25 +248,17 @@ void _thread_schedall (_waitq_t *wq);
 void _thread_preempt (uintptr_t cpu);
 #define _thread_yield() _thread_preempt(_cpuid())
 void _thread_sleeponwquntil (_waitq_t *wq, _date_t e);
-#define _thread_sleeponwq(Q,T) ({ \
-	if ((T) == _DATE_MAX) \
+#define _thread_sleeponwq(Q,D) ({ \
+	if ((D) == _DATE_MAX) \
 		_thread_sleeponwquntil((Q), _DATE_MAX); \
 	else { /* For accuracy, there must not be preemption between the sleep
 		      duration computation and the call to _thread_sleeponwquntil(). */ \
 		_preempt_disable(); \
-		_thread_sleeponwquntil((Q), (_clkcycles() + (T))); \
+		_thread_sleeponwquntil((Q), (_clkcycles() + (D))); \
 		_preempt_enable(); \
 	}; })
-#define _thread_sleepuntil(T) _thread_sleeponwquntil(0, (T))
-#define _thread_sleep(T) ({ \
-	if ((T) == _DATE_MAX) \
-		_thread_sleepuntil(_DATE_MAX); \
-	else { /* For accuracy, there must not be preemption between the sleep
-		      duration computation and the call to _thread_sleepuntil(). */ \
-		_preempt_disable(); \
-		_thread_sleepuntil(_clkcycles() + (T)); \
-		_preempt_enable(); \
-	}; })
+#define _thread_sleepuntil(D) _thread_sleeponwquntil(0, (D))
+#define _thread_sleep(D) _thread_sleeponwq(0, (D))
 void _thread_exit (void);
 
 #define _is_thread_stopped(X) ((X)->state == _THREAD_STOPPED)
