@@ -575,18 +575,15 @@ static void __thread_wakeup (_timer_t *t) {
 		_oops();
 	struct __runq *runq = &__runq[cpu];
 	while (_xchg(&runq->lock, 1));
-	_thread_t *curthrd = (_thread_t *)runq->cur;
-	if (curthrd) {
-		_dlist_add(&thrd->l, curthrd->l.prev, &curthrd->l);
-		runq->l = curthrd;
-	} else {
+	if (runq->l)
+		_dlist_add(&thrd->l, runq->l->l.prev, &runq->l->l);
+	else
 		_dlist_init(&thrd->l);
-		runq->l = thrd;
-	}
+	runq->l = container_of(thrd->l.next, _thread_t, l);
 	runq->cnt += 1;
 	thrd->state = _THREAD_RUNNING;
+	_thread_t *curthrd = (_thread_t *)runq->cur;
 	runq->cur = thrd;
-	_xchg(&runq->lock, 0);
 	_date_t scheddate, curscheddate = runq->scheddate;
 	_date_t clkcycles = _clkcycles();
 	if (runq->cnt > 1) {
@@ -597,6 +594,7 @@ static void __thread_wakeup (_timer_t *t) {
 		_timer_disarm(&runq->schedlr);
 		runq->scheddate = 0;
 	}
+	_xchg(&runq->lock, 0);
 	if (curthrd && curscheddate > clkcycles)
 		curthrd->timeleft = (curscheddate - clkcycles);
 	__switchctx(thrd);
@@ -736,24 +734,15 @@ void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 	runq->l = thrd;
 	runq->cnt += 1;
 	thrd->state = _THREAD_RUNNING;
-	uintptr_t is_cpuhalted, is_tosched;
 	if (cpu != _cpuid()) {
-		is_cpuhalted = (runq->cnt == 1 && !runq->cur);
-		is_tosched = 0;
-	} else {
-		is_cpuhalted = 0;
-		is_tosched = (runq->cnt == 2);
-	}
-	_xchg(&runq->lock, 0);
-	if (is_cpuhalted) // Send IPI if cpu halted.
-		__irq_ipi(cpu);
-	else if (is_tosched) {
-		if (runq->scheddate)
-			_oops();
+		if (!runq->cur || !runq->scheddate)
+			__irq_ipi(cpu);
+	} else if (!runq->scheddate) {
 		_date_t scheddate = (_clkcycles() + (schedlrhz / runq->cnt));
 		_timer_arm(&runq->schedlr, scheddate);
 		runq->scheddate = scheddate;
 	}
+	_xchg(&runq->lock, 0);
 	_preempt_enable();
 }
 
@@ -867,8 +856,17 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 	}
 	runq->cnt -= 1;
 	runq->cur = nxtthrd;
-	_xchg(&runq->lock, 0);
 	_thread_cur->state = _THREAD_STOPPED;
+	if (runq->cnt > 1) {
+		_date_t scheddate = (_clkcycles() + (schedlrhz / runq->cnt) + nxtthrd->timeleft);
+		nxtthrd->timeleft = 0;
+		_timer_arm(&runq->schedlr, scheddate);
+		runq->scheddate = scheddate;
+	} else {
+		_timer_disarm(&runq->schedlr);
+		runq->scheddate = 0;
+	}
+	_xchg(&runq->lock, 0);
 	if (wq) {
 		_thread_cur->wq = wq; // Must be set before wq->l.
 		while (_xchg(&wq->lock, 1));
@@ -881,19 +879,6 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 		_xchg(&wq->lock, 0);
 	} else
 		_thread_cur->l = _DLIST_NIL;
-	if (runq->cnt > 1) {
-		_date_t scheddate = _clkcycles();
-		if (nxtthrd->timeleft) {
-			scheddate += nxtthrd->timeleft;
-			nxtthrd->timeleft = 0;
-		} else
-			scheddate += (schedlrhz / runq->cnt);
-		_timer_arm(&runq->schedlr, scheddate);
-		runq->scheddate = scheddate;
-	} else {
-		_timer_disarm(&runq->schedlr);
-		runq->scheddate = 0;
-	}
 	__switchctx(nxtthrd); // Will halt if nxtthrd is null.
 	_preempt_enable();
 }
@@ -948,31 +933,32 @@ static void __thread_cur_preempt (uintptr_t cpu) {
 	_thread_t *nxtthrd = runq->l;
 	if (!nxtthrd) {
 		runq->cur = 0;
+		if (runq->scheddate) {
+			_timer_disarm(&runq->schedlr);
+			runq->scheddate = 0;
+		}
 		_xchg(&runq->lock, 0);
 		___switchctx(0);
 		goto done;
 	}
 	runq->l = container_of(nxtthrd->l.next, _thread_t, l);
 	runq->cur = nxtthrd;
-	_xchg(&runq->lock, 0);
 	if (nxtthrd != _thread_cur) {
 		if (runq->cnt > 1) {
-			_date_t scheddate = _clkcycles();
-			if (nxtthrd->timeleft) {
-				scheddate += nxtthrd->timeleft;
-				nxtthrd->timeleft = 0;
-			} else
-				scheddate += (schedlrhz / runq->cnt);
+			_date_t scheddate = (_clkcycles() + (schedlrhz / runq->cnt) + nxtthrd->timeleft);
+			nxtthrd->timeleft = 0;
 			_timer_arm(&runq->schedlr, scheddate);
 			runq->scheddate = scheddate;
 		} else {
 			_timer_disarm(&runq->schedlr);
 			runq->scheddate = 0;
 		}
+		_xchg(&runq->lock, 0);
 		___switchctx(nxtthrd);
 	} else {
 		_timer_disarm(&runq->schedlr);
 		runq->scheddate = 0;
+		_xchg(&runq->lock, 0);
 	}
 	done:;
 }
