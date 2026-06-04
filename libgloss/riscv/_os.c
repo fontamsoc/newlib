@@ -306,6 +306,7 @@ uintptr_t _mutex_lock (_mutex_t *m, _date_t timeout) {
 			// and has not yet put itself on the wait-queue; resulting in
 			// current thread missing its wake-up call and never waking up.
 			_thread_sleeponwq(&m->waitq, timeout);
+			m->waitq.p = 0;
 			while (_xchg(&m->lock, 1));
 			if (m->acqcnt)
 				goto unlock;
@@ -395,6 +396,7 @@ size_t _fifo_put (_fifo_t *f, void *buf, size_t sz, _date_t timeout) {
 			// f->wwaitq.p gets set non-null to avoid a race condition in a
 			// similar manner that it is done and explained in _mutex_lock().
 			_thread_sleeponwq(&f->wwaitq, timeout);
+			f->wwaitq.p = 0;
 			if (timeout != _DATE_MAX)
 				sleepduration = (_clkcycles() - sleepstart);
 			while (_xchg(&f->lock, 1));
@@ -478,6 +480,7 @@ size_t _fifo_get (_fifo_t *f, void *buf, size_t sz, bool peek, _date_t timeout) 
 			// f->rwaitq.p gets set non-null to avoid a race condition in a
 			// similar manner that it is done and explained in _mutex_lock().
 			_thread_sleeponwq(&f->rwaitq, timeout);
+			f->rwaitq.p = 0;
 			if (timeout != _DATE_MAX)
 				sleepduration = (_clkcycles() - sleepstart);
 			while (_xchg(&f->lock, 1));
@@ -887,17 +890,11 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 // Note that it does not preempt _thread_cur.
 void _thread_schedone (_waitq_t *wq) {
 	_preempt_disable();
-	if (wq->p) { // Avoid a race condition until wq->l is true.
-		while (!wq->l)
-			asm volatile("" ::: "memory");
-		wq->p = 0;
-		goto wq_l_true;
-	}
-	if (wq->l) {
-		wq_l_true:
-		// _thread_sched() removes the _thread_t from the _waitq_t.
-		_thread_sched(wq->l);
-	}
+	_thread_t *thrd;
+	while (!(thrd = wq->l) && wq->p) // Avoid a race condition until wq->l is true.
+		asm volatile("" ::: "memory");
+	if (thrd) // _thread_sched() removes the _thread_t from the _waitq_t.
+		_thread_sched(thrd);
 	_preempt_enable();
 }
 
@@ -906,17 +903,11 @@ void _thread_schedone (_waitq_t *wq) {
 // Note that it does not preempt _thread_cur.
 void _thread_schedall (_waitq_t *wq) {
 	_preempt_disable();
-	if (wq->p) { // Avoid a race condition until wq->l is true.
-		while (!wq->l)
-			asm volatile("" ::: "memory");
-		wq->p = 0;
-		goto wq_l_true;
-	}
-	while (wq->l) {
-		wq_l_true:
-		// _thread_sched() removes the _thread_t from the _waitq_t.
-		_thread_sched(wq->l);
-	}
+	_thread_t *thrd;
+	while (!(thrd = wq->l) && wq->p) // Avoid a race condition until wq->l is true.
+		asm volatile("" ::: "memory");
+	while (thrd) // _thread_sched() removes the _thread_t from the _waitq_t.
+		_thread_sched(thrd), thrd = wq->l;
 	_preempt_enable();
 }
 
