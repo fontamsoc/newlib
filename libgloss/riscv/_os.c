@@ -709,7 +709,6 @@ void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 			cpu = ((-cpu) - 1);
 		struct __runq *runq = &__runq[cpu]; // This scope has its own variable `runq`.
 		while (_xchg(&runq->lock, 1));
-		uintptr_t is_oncpu = (thrd == runq->cur); // Is running on its cpu.
 		if (thrd->l.next != &thrd->l) {
 			if (thrd == runq->l)
 				runq->l = container_of(thrd->l.next, _thread_t, l);
@@ -718,10 +717,9 @@ void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 			runq->l = 0;
 		runq->cnt -= 1;
 		_xchg(&runq->lock, 0);
-		if (cpu != _cpuid() && is_oncpu) {
+		if (cpu != _cpuid()) while (thrd == runq->cur) {
 			// Send IPI and spinwait until thrd is no longer running on the CPU.
 			__irq_ipi(cpu);
-			while (thrd == runq->cur);
 		}
 	}
 	if ((intptr_t)thrd->cpu < 0)
@@ -803,7 +801,6 @@ void _thread_stop (_thread_t *thrd) {
 		uintptr_t cpu = thrd->cpu;
 		struct __runq *runq = &__runq[cpu];
 		while (_xchg(&runq->lock, 1));
-		uintptr_t is_oncpu = (thrd == runq->cur); // Is running on its cpu.
 		if (thrd->l.next != &thrd->l) {
 			if (thrd == runq->l)
 				runq->l = container_of(thrd->l.next, _thread_t, l);
@@ -812,10 +809,9 @@ void _thread_stop (_thread_t *thrd) {
 			runq->l = 0;
 		runq->cnt -= 1;
 		_xchg(&runq->lock, 0);
-		if (cpu != _cpuid() && is_oncpu) {
+		if (cpu != _cpuid()) while (thrd == runq->cur) {
 			// Send IPI and spinwait until thrd is no longer running on the CPU.
 			__irq_ipi(cpu);
-			while (thrd == runq->cur);
 		}
 		thrd->state = _THREAD_STOPPED;
 		thrd->l = _DLIST_NIL;
