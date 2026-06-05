@@ -737,13 +737,16 @@ void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 	runq->l = thrd;
 	runq->cnt += 1;
 	thrd->state = _THREAD_RUNNING;
-	if (cpu != _cpuid()) {
-		if (!runq->cur || !runq->scheddate)
-			__irq_ipi(cpu);
-	} else if (!runq->scheddate) {
-		_date_t scheddate = (_clkcycles() + (schedlrhz / runq->cnt));
-		_timer_arm(&runq->schedlr, scheddate);
-		runq->scheddate = scheddate;
+	_thread_t *curthrd = (_thread_t *)runq->cur;
+	_date_t curscheddate = runq->scheddate;
+	_date_t clkcycles = _clkcycles();
+	if (curthrd && curscheddate > clkcycles)
+		curthrd->timeleft = (curscheddate - clkcycles);
+	if (cpu != _cpuid())
+		__irq_ipi(cpu);
+	else {
+		_timer_arm(&runq->schedlr, clkcycles);
+		runq->scheddate = clkcycles;
 	}
 	_xchg(&runq->lock, 0);
 	_preempt_enable();
