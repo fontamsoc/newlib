@@ -567,7 +567,7 @@ static void __thread_removefromwq (_thread_t *thrd) {
 
 void __switchctx (_thread_t *to);
 
-// Callback to wakeup a _thread_t put to sleep by _thread_sleep().
+// Callback to wakeup a _thread_t put to sleep by _thread_sleeponwquntil().
 static void __thread_wakeup (_timer_t *t) {
 	// IRQs are disabled since this function runs in a trap handling.
 	_thread_t *thrd = container_of(t, _thread_t, z);
@@ -587,10 +587,12 @@ static void __thread_wakeup (_timer_t *t) {
 	thrd->state = _THREAD_RUNNING;
 	_thread_t *curthrd = (_thread_t *)runq->cur;
 	runq->cur = thrd;
-	_date_t scheddate, curscheddate = runq->scheddate;
+	_date_t curscheddate = runq->scheddate;
 	_date_t clkcycles = _clkcycles();
+	if (curthrd && curscheddate > clkcycles)
+		curthrd->timeleft = (curscheddate - clkcycles);
 	if (runq->cnt > 1) {
-		scheddate = (clkcycles + (schedlrhz / runq->cnt));
+		_date_t scheddate = (clkcycles + (schedlrhz / runq->cnt));
 		_timer_arm(&runq->schedlr, scheddate);
 		runq->scheddate = scheddate;
 	} else {
@@ -598,8 +600,6 @@ static void __thread_wakeup (_timer_t *t) {
 		runq->scheddate = 0;
 	}
 	_xchg(&runq->lock, 0);
-	if (curthrd && curscheddate > clkcycles)
-		curthrd->timeleft = (curscheddate - clkcycles);
 	__switchctx(thrd);
 }
 
