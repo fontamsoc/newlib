@@ -849,13 +849,13 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 	while (_xchg(&runq->lock, 1));
 	_thread_t *nxtthrd;
 	if (_thread_cur->l.next != &_thread_cur->l) {
-		if (_thread_cur == runq->l)
+		if (_thread_cur == runq->l || runq->cnt < 2)
 			_oops(); // runq->l should be pointing to the next _thread_t and not _thread_cur.
 		nxtthrd = runq->l;
 		_dlist_del(_thread_cur->l.prev, _thread_cur->l.next);
 		runq->l = container_of(nxtthrd->l.next, _thread_t, l);
 	} else {
-		if (_thread_cur != runq->l)
+		if (_thread_cur != runq->l || runq->cnt != 1)
 			_oops();
 		nxtthrd = 0;
 		runq->l = 0;
