@@ -626,6 +626,7 @@ void __init_multithreading (_thread_t *thrd) {
 	thrd->savedctx = (_savedctx_t *)-1; // Set so thread is not seen as terminated.
 	_irq_init(&__ipi, -1, __ipi_preempt);
 	_irq_register(&__ipi);
+	__irq_ack(1); // Enable interrupt delivery.
 	__ncpu += 1;
 	// Send IPIs to start the other CPUs.
 	for (uintptr_t i = 1;; ++i) {
@@ -650,7 +651,7 @@ void __init_multithreading (_thread_t *thrd) {
 // To be used only by _start().
 // Cannot use percpu data, as they have not yet been setup.
 void __init_secondary_cpu (void) {
-	__irq_ack(1);
+	__irq_ack(1); // Acknowledge IPI and enable interrupt delivery.
 }
 
 // Create a new _thread_t and initialize its TLS and _thread_t areas.
