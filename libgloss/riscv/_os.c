@@ -756,12 +756,13 @@ void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 // If the thread is on a _waitq_t, it gets removed from it.
 // Note that it does not preempt _thread_cur.
 void _thread_sched (_thread_t *thrd) {
-	if (thrd->pin)
-		_thread_schedoncpu(thrd, thrd->cpu, thrd->pin);
-	else { // Find runq with the least number of threads.
+	uintptr_t cpu;
+	if (__ncpu < 2 || thrd->pin) {
+		cpu = thrd->cpu;
+		_thread_schedoncpu(thrd, (((intptr_t)cpu < 0)?(-cpu-1):cpu), thrd->pin);
+	} else { // Find runq with the least number of threads.
 		static uintptr_t pnd[NCPU] = {[0 ... NCPU-1] = 0};
 		static uintptr_t lock = 0;
-		uintptr_t cpu;
 		_preempt_disable();
 		while (_xchg(&lock, 1)); { // Block executed by one CPU at a time.
 			cpu = 0;
