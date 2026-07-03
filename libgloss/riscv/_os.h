@@ -82,7 +82,7 @@ typedef struct _timer {
 
 #define _TIMER_NIL (_timer_t){_DLIST_NIL, 0, 0, (void *)0}
 
-#define _TIMER_DEF(X, F) _timer X = {_DLIST_NIL, 0, 0, (F)}
+#define _TIMER_DEF(X, F) _timer_t X = {_DLIST_NIL, 0, 0, (F)}
 
 #define _timer_init(X, F) ({ \
 	(X)->l = _DLIST_NIL; \
