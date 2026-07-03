@@ -299,6 +299,10 @@ uintptr_t _mutex_lock (_mutex_t *m, _date_t timeout) {
 	if (timeout) {
 		while (_xchg(&m->lock, 1));
 		if (m->acqcnt) {
+			_date_t sleepstart, sleepduration = 0;
+			sleeponwq:;
+			if (timeout != _DATE_MAX)
+				sleepstart = _clkcycles();
 			if (!m->waitq.l)
 				m->waitq.p = 1;
 			_xchg(&m->lock, 0);
@@ -310,9 +314,18 @@ uintptr_t _mutex_lock (_mutex_t *m, _date_t timeout) {
 			// current thread missing its wake-up call and never waking up.
 			_thread_sleeponwq(&m->waitq, timeout);
 			m->waitq.p = 0;
+			if (timeout != _DATE_MAX)
+				sleepduration = (_clkcycles() - sleepstart);
 			while (_xchg(&m->lock, 1));
-			if (m->acqcnt)
-				goto unlock;
+			if (m->acqcnt) {
+				// Another thread acquired the mutex first;
+				// sleep again if there is timeout left.
+				if (sleepduration < timeout) {
+					timeout -= sleepduration;
+					goto sleeponwq;
+				}
+				goto unlock; // Return 0 because the timeout expired.
+			}
 		}
 		goto acquire;
 	}
