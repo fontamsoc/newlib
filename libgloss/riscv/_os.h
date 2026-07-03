@@ -182,6 +182,12 @@ typedef struct {
 	              // Can also be null while state is _THREAD_STOPPED.
 	uintptr_t claim; // Serializes waking the thread between __thread_wakeup()
 	                 // and _thread_schedoncpu() running on different CPUs.
+	uintptr_t ctxsaved; // Set by __switchctx() once the context of the thread
+	                    // being switched-out is fully saved; the CPU resuming
+	                    // the thread waits on it, then clears it, so that a
+	                    // woken-up thread cannot be restored from a stale or
+	                    // partially saved context while its previous CPU is
+	                    // still switching it out.
 	_timer_t z; // Used to make the thread sleep for a duration.
 	_date_t timeleft; // Time left to run when non-null.
 	void *stack; // Start of the stack.

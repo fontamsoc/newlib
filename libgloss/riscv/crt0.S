@@ -291,7 +291,7 @@ __switchctx:
   REG_S t1, SAVEDCTX_SCRATCH(sp)
   /* If mscratch is non-null, skip saving other SAVEDCTX_*
      as the thread will be restored from its trap context. */
-  bnez t1, 0f
+  bnez t1, 3f
 
   REG_S ra, SAVEDCTX_RA(sp)
   REG_S s0, SAVEDCTX_S0(sp)
@@ -309,6 +309,12 @@ __switchctx:
 
   csrr  t2, mstatus
   REG_S t2, SAVEDCTX_STATUS(sp)
+3:
+  /* Publish that the context is fully saved; a CPU wanting to resume
+     this thread spinwaits on it below, so that it cannot restore a
+     stale or partially saved context. */
+  li    t0, 1
+  REG_S t0, THREAD_CTXSAVED(tp)
 0:
   bnez a0, 0f
   csrr t0, mhartid
@@ -321,6 +327,13 @@ __switchctx:
   wfi
 0:
   mv tp, a0
+
+  /* Wait until the thread context is fully saved before restoring it,
+     as the CPU switching it out could still be saving it; then clear
+     the flag for the next time the thread is switched-out. */
+3:REG_L t0, THREAD_CTXSAVED(tp)
+  beqz  t0, 3b
+  REG_S x0, THREAD_CTXSAVED(tp)
 
   REG_L sp, THREAD_SAVEDCTX(tp)
 

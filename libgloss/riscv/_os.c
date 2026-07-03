@@ -633,6 +633,7 @@ void __init_multithreading (_thread_t *thrd) {
 	thrd->state = _THREAD_RUNNING;
 	thrd->wq = 0;
 	thrd->claim = 0;
+	thrd->ctxsaved = 0; // Currently running; set when first switched-out.
 	_timer_init(&thrd->z, __thread_wakeup);
 	thrd->timeleft = 0;
 	thrd->stack = 0;
@@ -691,6 +692,7 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 	thrd->state = _THREAD_STOPPED;
 	thrd->wq = 0;
 	thrd->claim = 0;
+	thrd->ctxsaved = 1; // The initial context below is ready to be restored.
 	_timer_init(&thrd->z, __thread_wakeup);
 	thrd->timeleft = 0;
 	thrd->stack = (is_stack_given ? 0 : stack);

@@ -61,6 +61,7 @@ void main (void) {
 	DEFINE(SAVEDCTX_SIZE, sizeof(_savedctx_t));
 
 	OFFSET(THREAD_CPU,      _thread_t, cpu);
+	OFFSET(THREAD_CTXSAVED, _thread_t, ctxsaved);
 	OFFSET(THREAD_SAVEDCTX, _thread_t, savedctx);
 
 	DEFINE(THREAD_STRUCT_SIZE, sizeof(_thread_t));
