@@ -175,6 +175,10 @@ typedef struct {
 	// Above valid only when interrupting a thread or the handling of a trap.
 	uintptr_t scratch, status, epc;
 	uintptr_t tval, tval2, cause;
+	// Padding which insures that sizeof(_savedctx_t) is a multiple of 16,
+	// so that trap and context-switch frames preserve the RISC-V required
+	// stack alignment for the C functions they call.
+	uintptr_t pad;
 } _savedctx_t;
 
 typedef struct {
