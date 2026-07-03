@@ -72,6 +72,7 @@ multilibtool_LIBRARIES += %D%/libgloss.a
 	%D%/sys_utime.c \
 	%D%/sys_wait.c \
 	%D%/sys_write.c \
+	%D%/nanosleep.c \
 	%D%/mlock.c \
 	%D%/lock.c \
 	%D%/_os.c
