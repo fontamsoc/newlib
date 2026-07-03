@@ -736,14 +736,18 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 	return thrd;
 }
 
-// Move a thread to a cpu.
+// Move a thread to a cpu, and make it runnable; does nothing if the thread
+// is already running: its wake-up is then already accomplished, and moving
+// a running thread to another runq is not supported, because the thread
+// could be spinning with IRQs disabled on a lock that the caller holds, in
+// which case the spinwait that removing a running thread from its runq
+// requires would deadlock, as the thread CPU could never take the IPIs
+// preempting it; to migrate a running thread, use _thread_stop() first.
 // If the thread is on a _waitq_t, it gets removed from it.
 // The argument pin, when true, prevents load-balancing from migrating the thread.
-// The argument wake, when true, means the call is a wake-up rather than a
-// deliberate migration, and does nothing if the thread is already running.
 // The thread being moved cannot be _thread_cur.
 // Note that it does not preempt _thread_cur.
-static void __thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin, bool wake) {
+void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 	_preempt_disable();
 	// The thread being moved cannot be _thread_cur, because it needs
 	// its resume context to already have been saved.
@@ -752,42 +756,14 @@ static void __thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin, bool 
 	// Serialize with __thread_wakeup() which could concurrently
 	// be waking up the thread on the CPU that armed its sleep _timer.
 	while (_xchg(&thrd->claim, 1));
-	// A wake-up is already accomplished if the thread is running; it must
-	// then not be moved to another runq, because the thread could be
-	// spinning with IRQs disabled on a lock that this waker holds, in
-	// which case the spinwait below, that removing a running thread from
-	// its runq requires, would deadlock, as the thread CPU could never
-	// take the IPIs preempting the thread.
-	if (wake && thrd->state == _THREAD_RUNNING)
-		goto done;
+	if (thrd->state == _THREAD_RUNNING)
+		goto done; // Already running, as described above.
 	// While the thread sleep _timer is armed, the thread must resume on the
 	// CPU that armed it, so that _thread_sleeponwquntil() disarms it there.
 	if (thrd->z.l.prev)
 		cpu = thrd->z.cpu;
 	if (thrd->wq)
 		__thread_removefromwq(thrd);
-	// If thrd state is already _THREAD_RUNNING, remove it from its runq.
-	if (thrd->state == _THREAD_RUNNING) {
-		uintptr_t cpu = thrd->cpu; // This scope has its own variable `cpu`.
-		// If thrd went through a previous call of _thread_sched() without
-		// going through __switchctx(), its field cpu could still be negative.
-		if ((intptr_t)cpu < 0)
-			cpu = ((-cpu) - 1);
-		struct __runq *runq = &__runq[cpu]; // This scope has its own variable `runq`.
-		while (_xchg(&runq->lock, 1));
-		if (thrd->l.next != &thrd->l) {
-			if (thrd == runq->l)
-				runq->l = container_of(thrd->l.next, _thread_t, l);
-			_dlist_del(thrd->l.prev, thrd->l.next);
-		} else
-			runq->l = 0;
-		runq->cnt -= 1;
-		_xchg(&runq->lock, 0);
-		if (cpu != _cpuid()) while (thrd == runq->cur) {
-			// Send IPI and spinwait until thrd is no longer running on the CPU.
-			__irq_ipi(cpu);
-		}
-	}
 	if ((intptr_t)thrd->cpu < 0)
 		thrd->cpu = -(cpu + 1); // Negate to signal __switchctx().
 	else
@@ -818,15 +794,6 @@ static void __thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin, bool 
 	_preempt_enable();
 }
 
-// Move a thread to a cpu.
-// If the thread is on a _waitq_t, it gets removed from it.
-// The argument pin, when true, prevents load-balancing from migrating the thread.
-// The thread being moved cannot be _thread_cur.
-// Note that it does not preempt _thread_cur.
-void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
-	__thread_schedoncpu(thrd, cpu, pin, false);
-}
-
 // Schedule a thread to run; does nothing if the thread is already running.
 // If the thread is on a _waitq_t, it gets removed from it.
 // Note that it does not preempt _thread_cur.
@@ -834,11 +801,11 @@ void _thread_sched (_thread_t *thrd) {
 	uintptr_t cpu;
 	if (thrd->z.l.prev) {
 		// While the thread sleep _timer is armed, the thread must resume on
-		// the CPU that armed it; __thread_schedoncpu() insures that it does.
-		__thread_schedoncpu(thrd, thrd->z.cpu, thrd->pin, true);
+		// the CPU that armed it; _thread_schedoncpu() insures that it does.
+		_thread_schedoncpu(thrd, thrd->z.cpu, thrd->pin);
 	} else if (__ncpu < 2 || thrd->pin) {
 		cpu = thrd->cpu;
-		__thread_schedoncpu(thrd, (((intptr_t)cpu < 0)?(-cpu-1):cpu), thrd->pin, true);
+		_thread_schedoncpu(thrd, (((intptr_t)cpu < 0)?(-cpu-1):cpu), thrd->pin);
 	} else { // Find runq with the least number of threads.
 		static uintptr_t pnd[NCPU] = {[0 ... NCPU-1] = 0};
 		static uintptr_t lock = 0;
@@ -858,7 +825,7 @@ void _thread_sched (_thread_t *thrd) {
 			}
 			++pnd[cpu]; // Compensate until __runq[cpu].cnt gets incremented.
 		} _xchg(&lock, 0);
-		__thread_schedoncpu(thrd, cpu, thrd->pin, true);
+		_thread_schedoncpu(thrd, cpu, thrd->pin);
 		// pnd[] is only ever accessed within the lock using plain loads and
 		// stores, as atomics do not participate in the coherency protocol
 		// and plain reads would not observe atomic writes.
