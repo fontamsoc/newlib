@@ -670,8 +670,8 @@ void __init_multithreading (_thread_t *thrd) {
 	__ncpu += 1;
 	// Send IPIs to start the other CPUs.
 	for (uintptr_t i = 1;; ++i) {
-		if (i > NCPU) // TODO: To be removed once percpu support is complete.
-			_oops();
+		if (i >= NCPU) // Harts for which (mhartid >= NCPU) park in _start(). TODO: To be removed once percpu support is complete.
+			break;
 		uintptr_t ncpu = __ncpu;
 		if (__irq_ipi(i) == -1)
 			break;

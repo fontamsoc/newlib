@@ -33,6 +33,13 @@ _start:
      initialization is done below only by one cpu */
   csrr s0, mhartid
   beqz s0, 1f
+  # Park harts for which (mhartid >= NCPU), as there are no
+  # per-CPU data for them; mstatus.mie is off, so wfi never traps.
+  li   t0, NCPU
+  bltu s0, t0, 0f
+2:wfi
+  j 2b
+0:
   # For an SOC where all cores start, loop here until (__ncpu == mhartid).
   la    s1, __ncpu
 0:REG_L t0, 0(s1)
