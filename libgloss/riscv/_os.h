@@ -226,7 +226,7 @@ _date_t _clkcycles (void);
 
 #define _SECS(D) ({ \
 	_date_t d = _clkfreq(); \
-	d = ((D)*_clkfreq()); \
+	d = ((D)*d); /* Multiply by the 64bits local so it cannot overflow */ \
 	d; })
 #define _MSECS(D) ({ \
 	_date_t d = _clkfreq(); \
