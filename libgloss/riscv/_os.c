@@ -142,15 +142,18 @@ void _timer_arm (_timer_t *t, _date_t e) {
 			}
 		}
 		_dlist_add(&t->l, th->l.prev, &th->l);
-		if (uh && th == __timer_list[coreid]) {
+		if (uh && th == __timer_list[coreid])
 			__timer_list[coreid] = t;
-			__settimecmp(__timer_list[coreid]->e);
-		}
 	} else {
 		_dlist_init(&t->l);
 		__timer_list[coreid] = t;
-		__settimecmp(__timer_list[coreid]->e);
 	}
+	// Unconditionally program the compare value from the nearest _timer, because
+	// the unlinking above can silently change which _timer is the nearest; it
+	// insures the invariant (mtimecmp == __timer_list[coreid]->e), otherwise a
+	// stale earlier compare value would storm this CPU with timer interrupts,
+	// which find the nearest _timer un-expired, until it expires.
+	__settimecmp(__timer_list[coreid]->e);
 	__asm__ __volatile__ ("csrs mie, %0\n" :: "r"(0x80) : "memory"); // Set mie.mtie.
 	_preempt_enable();
 }
