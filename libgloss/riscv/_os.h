@@ -180,6 +180,8 @@ typedef struct {
 	} state;
 	_waitq_t *wq; // Non-null when state is _THREAD_STOPPED.
 	              // Can also be null while state is _THREAD_STOPPED.
+	uintptr_t claim; // Serializes waking the thread between __thread_wakeup()
+	                 // and _thread_schedoncpu() running on different CPUs.
 	_timer_t z; // Used to make the thread sleep for a duration.
 	_date_t timeleft; // Time left to run when non-null.
 	void *stack; // Start of the stack.

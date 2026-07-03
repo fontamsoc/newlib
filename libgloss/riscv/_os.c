@@ -554,15 +554,21 @@ static struct __runq {
 static uintptr_t schedlrhz; // Get set to the value of SCHEDLRHZ.
 
 static void __thread_removefromwq (_thread_t *thrd) {
-	while (_xchg(&thrd->wq->lock, 1));
-	if (thrd->l.next != &thrd->l) {
-		if (thrd == thrd->wq->l)
-			thrd->wq->l = container_of(thrd->l.next, _thread_t, l);
-		_dlist_del(thrd->l.prev, thrd->l.next);
-	} else
-		thrd->wq->l = 0;
-	_xchg(&thrd->wq->lock, 0);
-	thrd->wq = 0;
+	_waitq_t *wq = thrd->wq;
+	while (_xchg(&wq->lock, 1));
+	// Re-check thrd->wq within the lock, as a concurrent
+	// remover may have already removed thrd from the _waitq_t.
+	if (thrd->wq == wq) {
+		if (thrd->l.next != &thrd->l) {
+			if (thrd == wq->l)
+				wq->l = container_of(thrd->l.next, _thread_t, l);
+			_dlist_del(thrd->l.prev, thrd->l.next);
+		} else
+			wq->l = 0;
+		// Cleared within the lock so that concurrent removers re-check reliably.
+		thrd->wq = 0;
+	}
+	_xchg(&wq->lock, 0);
 }
 
 void __switchctx (_thread_t *to);
@@ -571,6 +577,14 @@ void __switchctx (_thread_t *to);
 static void __thread_wakeup (_timer_t *t) {
 	// IRQs are disabled since this function runs in a trap handling.
 	_thread_t *thrd = container_of(t, _thread_t, z);
+	if (_xchg(&thrd->claim, 1))
+		return; // A concurrent _thread_schedoncpu() owns waking up the thread.
+	if (_is_thread_running(thrd)) {
+		// The thread was already woken up early through _thread_schedoncpu()
+		// and has not yet disarmed its _timer in _thread_sleeponwquntil().
+		_xchg(&thrd->claim, 0);
+		return;
+	}
 	if (thrd->wq) // If the thread is on a _waitq_t, it gets removed from it.
 		__thread_removefromwq(thrd);
 	uintptr_t cpu = thrd->cpu;
@@ -600,6 +614,7 @@ static void __thread_wakeup (_timer_t *t) {
 		runq->scheddate = 0;
 	}
 	_xchg(&runq->lock, 0);
+	_xchg(&thrd->claim, 0);
 	__switchctx(thrd);
 }
 
@@ -617,6 +632,7 @@ void __init_multithreading (_thread_t *thrd) {
 	_dlist_init(&thrd->l);
 	thrd->state = _THREAD_RUNNING;
 	thrd->wq = 0;
+	thrd->claim = 0;
 	_timer_init(&thrd->z, __thread_wakeup);
 	thrd->timeleft = 0;
 	thrd->stack = 0;
@@ -674,6 +690,7 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 	thrd->l = _DLIST_NIL;
 	thrd->state = _THREAD_STOPPED;
 	thrd->wq = 0;
+	thrd->claim = 0;
 	_timer_init(&thrd->z, __thread_wakeup);
 	thrd->timeleft = 0;
 	thrd->stack = (is_stack_given ? 0 : stack);
@@ -700,6 +717,13 @@ void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 	// its resume context to already have been saved.
 	if (thrd == _thread_cur || _is_thread_terminated(thrd) || cpu >= __ncpu)
 		_oops();
+	// Serialize with __thread_wakeup() which could concurrently
+	// be waking up the thread on the CPU that armed its sleep _timer.
+	while (_xchg(&thrd->claim, 1));
+	// While the thread sleep _timer is armed, the thread must resume on the
+	// CPU that armed it, so that _thread_sleeponwquntil() disarms it there.
+	if (thrd->z.l.prev)
+		cpu = thrd->z.cpu;
 	if (thrd->wq)
 		__thread_removefromwq(thrd);
 	// If thrd state is already _THREAD_RUNNING, remove it from its runq.
@@ -750,6 +774,7 @@ void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 		runq->scheddate = clkcycles;
 	}
 	_xchg(&runq->lock, 0);
+	_xchg(&thrd->claim, 0);
 	_preempt_enable();
 }
 
@@ -758,7 +783,11 @@ void _thread_schedoncpu (_thread_t *thrd, uintptr_t cpu, bool pin) {
 // Note that it does not preempt _thread_cur.
 void _thread_sched (_thread_t *thrd) {
 	uintptr_t cpu;
-	if (__ncpu < 2 || thrd->pin) {
+	if (thrd->z.l.prev) {
+		// While the thread sleep _timer is armed, the thread must resume on
+		// the CPU that armed it; _thread_schedoncpu() insures that it does.
+		_thread_schedoncpu(thrd, thrd->z.cpu, thrd->pin);
+	} else if (__ncpu < 2 || thrd->pin) {
 		cpu = thrd->cpu;
 		_thread_schedoncpu(thrd, (((intptr_t)cpu < 0)?(-cpu-1):cpu), thrd->pin);
 	} else { // Find runq with the least number of threads.
@@ -888,6 +917,13 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 	} else
 		_thread_cur->l = _DLIST_NIL;
 	__switchctx(nxtthrd); // Will halt if nxtthrd is null.
+	// Executed when the thread resumes; IRQs are still disabled, and the
+	// thread is running on the CPU that armed its sleep _timer, either
+	// because that CPU woke it up through __thread_wakeup(), or because
+	// _thread_schedoncpu() insures that a thread resumes on that CPU
+	// while its sleep _timer is armed.
+	if (e != _DATE_MAX)
+		_timer_disarm(&_thread_cur->z); // Does nothing if it already expired.
 	_preempt_enable();
 }
 
