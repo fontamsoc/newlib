@@ -111,7 +111,12 @@ void _irq_unregister (_irq_t *i);
 
 typedef struct {
 	uintptr_t lock;
-	uintptr_t p; // Used to avoid mutex and fifo race conditions.
+	uintptr_t p; // Count of threads about to add themselves to the wait-queue;
+	             // used to avoid mutex and fifo race conditions missing wake-up calls;
+	             // incremented, within the wait-queue lock, before the thread
+	             // sleeps, and decremented by _thread_sleeponwquntil() once the
+	             // thread is on the wait-queue; only ever accessed using plain
+	             // loads and stores (no atomics).
 	void *l; // Points to a circular linked list of _thread_t(s) waiting.
 } _waitq_t;
 

@@ -303,17 +303,22 @@ uintptr_t _mutex_lock (_mutex_t *m, _date_t timeout) {
 			sleeponwq:;
 			if (timeout != _DATE_MAX)
 				sleepstart = _clkcycles();
-			if (!m->waitq.l)
-				m->waitq.p = 1;
+			// Plain increment within the wait-queue lock, so that all
+			// accesses of the field p use plain loads and stores whose
+			// cross-CPU ordering the dcache coherency guarantees.
+			while (_xchg(&m->waitq.lock, 1));
+			++m->waitq.p;
+			_xchg(&m->waitq.lock, 0);
 			_xchg(&m->lock, 0);
-			// m->waitq.p gets set non-null to avoid a race condition
+			// m->waitq.p gets incremented to avoid a race condition
 			// after unlocking m->lock with m->acqcnt becoming null,
 			// when _thread_schedone(&m->waitq) is called by another thread
 			// _mutex_unlock() on another CPU while current thread is here
 			// and has not yet put itself on the wait-queue; resulting in
 			// current thread missing its wake-up call and never waking up.
+			// _thread_sleeponwquntil() decrements it back once current
+			// thread is on the wait-queue.
 			_thread_sleeponwq(&m->waitq, timeout);
-			m->waitq.p = 0;
 			if (timeout != _DATE_MAX)
 				sleepduration = (_clkcycles() - sleepstart);
 			while (_xchg(&m->lock, 1));
@@ -406,13 +411,14 @@ size_t _fifo_put (_fifo_t *f, void *buf, size_t sz, _date_t timeout) {
 			sleeponwq:;
 			if (timeout != _DATE_MAX)
 				sleepstart = _clkcycles();
-			if (!f->wwaitq.l)
-				f->wwaitq.p = 1;
+			// Plain increment within the wait-queue lock as in _mutex_lock().
+			while (_xchg(&f->wwaitq.lock, 1));
+			++f->wwaitq.p;
+			_xchg(&f->wwaitq.lock, 0);
 			_xchg(&f->lock, 0);
-			// f->wwaitq.p gets set non-null to avoid a race condition in a
+			// f->wwaitq.p gets incremented to avoid a race condition in a
 			// similar manner that it is done and explained in _mutex_lock().
 			_thread_sleeponwq(&f->wwaitq, timeout);
-			f->wwaitq.p = 0;
 			if (timeout != _DATE_MAX)
 				sleepduration = (_clkcycles() - sleepstart);
 			while (_xchg(&f->lock, 1));
@@ -490,13 +496,14 @@ size_t _fifo_get (_fifo_t *f, void *buf, size_t sz, bool peek, _date_t timeout) 
 			sleeponwq:;
 			if (timeout != _DATE_MAX)
 				sleepstart = _clkcycles();
-			if (!f->rwaitq.l)
-				f->rwaitq.p = 1;
+			// Plain increment within the wait-queue lock as in _mutex_lock().
+			while (_xchg(&f->rwaitq.lock, 1));
+			++f->rwaitq.p;
+			_xchg(&f->rwaitq.lock, 0);
 			_xchg(&f->lock, 0);
-			// f->rwaitq.p gets set non-null to avoid a race condition in a
+			// f->rwaitq.p gets incremented to avoid a race condition in a
 			// similar manner that it is done and explained in _mutex_lock().
 			_thread_sleeponwq(&f->rwaitq, timeout);
-			f->rwaitq.p = 0;
 			if (timeout != _DATE_MAX)
 				sleepduration = (_clkcycles() - sleepstart);
 			while (_xchg(&f->lock, 1));
@@ -950,6 +957,12 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 			_dlist_init(&_thread_cur->l);
 			wq->l = _thread_cur;
 		}
+		// Current thread is now on the wait-queue; decrement wq->p which was
+		// incremented before calling this function, as explained in _mutex_lock().
+		// The decrement is guarded so that users of a custom _waitq_t which
+		// do not use the wq->p protocol cannot make it wrap around.
+		if (wq->p)
+			--wq->p; // Plain decrement; wq->lock is held.
 		_xchg(&wq->lock, 0);
 	} else
 		_thread_cur->l = _DLIST_NIL;
@@ -969,8 +982,18 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 void _thread_schedone (_waitq_t *wq) {
 	_preempt_disable();
 	_thread_t *thrd;
-	while (!(thrd = wq->l) && wq->p) // Avoid a race condition until wq->l is true.
+	while (1) { // Avoid a race condition until wq->l is true.
+		// wq->p must be read before wq->l using ordered (volatile) reads:
+		// a thread about to wait (see _mutex_lock()) adds itself to the
+		// wait-queue before decrementing wq->p, hence, when wq->p reads
+		// null, the read of wq->l that follows is conclusive; reading in
+		// the opposite order could miss a thread which added itself to
+		// the wait-queue and decremented wq->p between the two reads.
+		uintptr_t p = *(volatile uintptr_t *)&wq->p;
+		if ((thrd = *(_thread_t *volatile *)&wq->l) || !p)
+			break;
 		asm volatile("" ::: "memory");
+	}
 	if (thrd) // _thread_sched() removes the _thread_t from the _waitq_t.
 		_thread_sched(thrd);
 	_preempt_enable();
@@ -982,8 +1005,13 @@ void _thread_schedone (_waitq_t *wq) {
 void _thread_schedall (_waitq_t *wq) {
 	_preempt_disable();
 	_thread_t *thrd;
-	while (!(thrd = wq->l) && wq->p) // Avoid a race condition until wq->l is true.
+	while (1) { // Avoid a race condition until wq->l is true.
+		// wq->p read before wq->l as explained in _thread_schedone().
+		uintptr_t p = *(volatile uintptr_t *)&wq->p;
+		if ((thrd = *(_thread_t *volatile *)&wq->l) || !p)
+			break;
 		asm volatile("" ::: "memory");
+	}
 	while (thrd) // _thread_sched() removes the _thread_t from the _waitq_t.
 		_thread_sched(thrd), thrd = wq->l;
 	_preempt_enable();
