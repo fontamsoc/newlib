@@ -655,7 +655,11 @@ void __init_multithreading (_thread_t *thrd) {
 	_dlist_init(&thrd->l);
 	thrd->state = _THREAD_RUNNING;
 	thrd->wq = 0;
-	thrd->claim = 0;
+	// Atomically manipulated variables must always be initialized using an
+	// atomic instruction when in runtime-allocated memory, as atomics do not
+	// participate in the coherency protocol and would otherwise read the
+	// stale value present at their coherency point.
+	_xchg(&thrd->claim, 0);
 	thrd->ctxsaved = 0; // Currently running; set when first switched-out.
 	_timer_init(&thrd->z, __thread_wakeup);
 	thrd->timeleft = 0;
@@ -714,7 +718,8 @@ _thread_t *_thread_create (void* stack, uintptr_t stacksz, void (*entry)(void *a
 	thrd->l = _DLIST_NIL;
 	thrd->state = _THREAD_STOPPED;
 	thrd->wq = 0;
-	thrd->claim = 0;
+	// Atomic initialization as explained in __init_multithreading().
+	_xchg(&thrd->claim, 0);
 	thrd->ctxsaved = 1; // The initial context below is ready to be restored.
 	_timer_init(&thrd->z, __thread_wakeup);
 	thrd->timeleft = 0;
@@ -851,10 +856,15 @@ void _thread_sched (_thread_t *thrd) {
 					cpu = i;
 				}
 			}
-			_atomic_inc(&pnd[cpu]);; // Compensate until __runq[cpu].cnt gets incremented.
+			++pnd[cpu]; // Compensate until __runq[cpu].cnt gets incremented.
 		} _xchg(&lock, 0);
 		__thread_schedoncpu(thrd, cpu, thrd->pin, true);
-		_atomic_dec(&pnd[cpu]);
+		// pnd[] is only ever accessed within the lock using plain loads and
+		// stores, as atomics do not participate in the coherency protocol
+		// and plain reads would not observe atomic writes.
+		while (_xchg(&lock, 1));
+		--pnd[cpu];
+		_xchg(&lock, 0);
 		_preempt_enable();
 	}
 }

@@ -131,6 +131,15 @@ typedef struct {
 
 #define _MUTEX_NIL (_mutex_t){0, 0, 0, _WAITQ_NIL}
 
+// Initialize a _mutex_t in runtime-allocated memory; its lock fields are
+// atomically manipulated variables which must be initialized using atomic
+// instructions, as atomics do not participate in the coherency protocol.
+// Statically defined _mutex_t(s) can simply use _MUTEX_NIL.
+#define _mutex_init(X) ({ \
+	*(X) = _MUTEX_NIL; \
+	_xchg(&(X)->lock, 0); \
+	_xchg(&(X)->waitq.lock, 0); })
+
 uintptr_t _mutex_lock (_mutex_t *m, _date_t timeout);
 void _mutex_unlock (_mutex_t *m);
 uintptr_t _mutex_lock_recursive (_mutex_t *m, _date_t timeout);
@@ -151,7 +160,11 @@ typedef struct {
 	(X)->widx = 0; (X)->ridx = 0; \
 	(X)->buf = B; (X)->sz = S; \
 	(X)->wwaitq = _WAITQ_NIL; \
-	(X)->rwaitq = _WAITQ_NIL; })
+	(X)->rwaitq = _WAITQ_NIL; \
+	/* The wait-queue locks are atomically manipulated and must be
+	   atomically initialized as explained above _mutex_init(). */ \
+	_xchg(&(X)->wwaitq.lock, 0); \
+	_xchg(&(X)->rwaitq.lock, 0); })
 
 size_t _fifo_put (_fifo_t *f, void *buf, size_t sz, _date_t timeout);
 size_t _fifo_get (_fifo_t *f, void *buf, size_t sz, bool peek, _date_t timeout);

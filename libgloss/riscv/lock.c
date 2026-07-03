@@ -21,7 +21,7 @@ struct __lock __lock___arc4random_mutex = {_MUTEX_NIL};
 
 void __retarget_lock_init (_LOCK_T *lock) {
 	struct __lock *l = malloc(sizeof(struct __lock));
-	l->m = _MUTEX_NIL;
+	_mutex_init(&l->m); // Atomically initializes the lock fields.
 	*lock = l;
 }
 
