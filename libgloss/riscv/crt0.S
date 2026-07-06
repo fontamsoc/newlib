@@ -235,12 +235,13 @@ __trap_ret: # Label used from __switchctx().
   addi t3, t3, 4
   REG_S t3, SAVEDCTX_EPC(sp)
 0:
+  REG_L t2, SAVEDCTX_STATUS(sp)
+#if USETAILCHAIN
   # Tail-chain: if another interrupt is already pending and enabled,
   # dispatch it now on the still-live saved context, skipping the full
   # register restore, mret, hardware re-trap and register re-save.
   # Chain only if the interrupted context had IRQs enabled (mstatus.MPIE),
   # as handlers could otherwise deadlock on spinlocks it is holding.
-  REG_L t2, SAVEDCTX_STATUS(sp)
   andi t0, t2, 0x80 /* mstatus.MPIE */
   beqz t0, 2f
   csrr t3, mip
@@ -263,6 +264,7 @@ __trap_ret: # Label used from __switchctx().
   call __trap_irq
   j 1b
 2:
+#endif /* USETAILCHAIN */
   REG_L t3, SAVEDCTX_EPC(sp)
   csrw mepc, t3
   csrw mstatus, t2
