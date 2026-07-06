@@ -256,8 +256,7 @@ __trap_ret: # Label used from __switchctx().
 3:
   or   t5, t5, t3
   beqz t5, 2f
-  li   t0, 1
-  slli t0, t0, (__riscv_xlen-1)
+  li   t0, (1<<(__riscv_xlen-1))
   or   t4, t4, t0
   REG_S t4, SAVEDCTX_CAUSE(sp)
   csrw mscratch, sp /* _trap_savedctx; stale or null when arriving from __switchctx() */
