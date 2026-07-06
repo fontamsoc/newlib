@@ -229,13 +229,42 @@ __trap:
 0:
   call __trap_exc_inv
 __trap_ret: # Label used from __switchctx().
-1: # Skip to next instruction if true was returned.
-  REG_L t3, SAVEDCTX_EPC(sp)
+1: # Advance the saved EPC to the next instruction if true was returned.
   beqz a0, 0f
+  REG_L t3, SAVEDCTX_EPC(sp)
   addi t3, t3, 4
+  REG_S t3, SAVEDCTX_EPC(sp)
 0:
-  csrw mepc, t3
+  # Tail-chain: if another interrupt is already pending and enabled,
+  # dispatch it now on the still-live saved context, skipping the full
+  # register restore, mret, hardware re-trap and register re-save.
+  # Chain only if the interrupted context had IRQs enabled (mstatus.MPIE),
+  # as handlers could otherwise deadlock on spinlocks it is holding.
   REG_L t2, SAVEDCTX_STATUS(sp)
+  andi t0, t2, 0x80 /* mstatus.MPIE */
+  beqz t0, 2f
+  csrr t3, mip
+  csrr t4, mie
+  and  t3, t3, t4
+  li   t4, 7 /* Machine Timer */
+  andi t5, t3, 0x80 /* mip.MTIP */
+  srli t3, t3, 11
+  andi t3, t3, 1 /* mip.MEIP */
+  beqz t3, 3f
+  li   t4, 11 /* Machine External; higher hw priority than Machine Timer */
+3:
+  or   t5, t5, t3
+  beqz t5, 2f
+  li   t0, 1
+  slli t0, t0, (__riscv_xlen-1)
+  or   t4, t4, t0
+  REG_S t4, SAVEDCTX_CAUSE(sp)
+  csrw mscratch, sp /* _trap_savedctx; stale or null when arriving from __switchctx() */
+  call __trap_irq
+  j 1b
+2:
+  REG_L t3, SAVEDCTX_EPC(sp)
+  csrw mepc, t3
   csrw mstatus, t2
   REG_L t1, SAVEDCTX_SCRATCH(sp)
   csrw mscratch, t1
