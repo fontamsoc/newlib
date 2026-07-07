@@ -41,7 +41,13 @@ bool __trap_exc_ecall_m (void) {
 			__printstr("==== OOPS CPU"); __printdec(_cpuid());
 			__printstr(" 0x"); __printhex(savedctx->epc);
 			__printstr(" ====\n");
-			__asm__ __volatile__ ("csrw mtvec, x0; ebreak\n" ::: "memory");
+			// When the gdbstub is linked-in, keep mtvec valid so that
+			// the ebreak breaks into the debugger instead of shutting down.
+			extern char _gdbstub_active __attribute__((weak));
+			if (&_gdbstub_active)
+				__asm__ __volatile__ ("ebreak\n" ::: "memory");
+			else
+				__asm__ __volatile__ ("csrw mtvec, x0; ebreak\n" ::: "memory");
 			while(1);
 		default:
 			savedctx->a0 = -1;
@@ -1069,17 +1075,18 @@ void _thread_exit (void) {
 }
 
 // unimplemented exceptions.
-bool __trap_exc_insn_misaligned (void) { while(1); }
-bool __trap_exc_insn_afault (void) { while(1); }
-bool __trap_exc_insn_illegal (void) { while(1); }
-bool __trap_exc_break (void) { while(1); }
-bool __trap_exc_load_misaligned (void) { while(1); }
-bool __trap_exc_load_afault (void) { while(1); }
-bool __trap_exc_store_misaligned (void) { while(1); }
-bool __trap_exc_store_afault (void) { while(1); }
-bool __trap_exc_ecall_u (void) { while(1); }
-bool __trap_exc_ecall_s (void) { while(1); }
-bool __trap_exc_insn_pfault (void) { while(1); }
-bool __trap_exc_load_pfault (void) { while(1); }
-bool __trap_exc_store_pfault (void) { while(1); }
-bool __trap_exc_inv (void) { while(1); }
+// Weak so that a library (ie: libgdbstub.a) can override them.
+__attribute__((weak)) bool __trap_exc_insn_misaligned (void) { while(1); }
+__attribute__((weak)) bool __trap_exc_insn_afault (void) { while(1); }
+__attribute__((weak)) bool __trap_exc_insn_illegal (void) { while(1); }
+__attribute__((weak)) bool __trap_exc_break (void) { while(1); }
+__attribute__((weak)) bool __trap_exc_load_misaligned (void) { while(1); }
+__attribute__((weak)) bool __trap_exc_load_afault (void) { while(1); }
+__attribute__((weak)) bool __trap_exc_store_misaligned (void) { while(1); }
+__attribute__((weak)) bool __trap_exc_store_afault (void) { while(1); }
+__attribute__((weak)) bool __trap_exc_ecall_u (void) { while(1); }
+__attribute__((weak)) bool __trap_exc_ecall_s (void) { while(1); }
+__attribute__((weak)) bool __trap_exc_insn_pfault (void) { while(1); }
+__attribute__((weak)) bool __trap_exc_load_pfault (void) { while(1); }
+__attribute__((weak)) bool __trap_exc_store_pfault (void) { while(1); }
+__attribute__((weak)) bool __trap_exc_inv (void) { while(1); }

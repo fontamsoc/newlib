@@ -77,6 +77,16 @@ multilibtool_LIBRARIES += %D%/libgloss.a
 	%D%/lock.c \
 	%D%/_os.c
 
+multilibtool_LIBRARIES += %D%/libgdbstub.a
+%C%_libgdbstub_a_CPPFLAGS = -I$(srcdir)/%D%
+%C%_libgdbstub_a_SOURCES = %D%/_os_gdbstub.c
+# Optimize the gdbstub for size; appended after CFLAGS, the -Os
+# overrides the -O that the toolchain build passes down through
+# CFLAGS_FOR_TARGET (ie: the last -O flag wins); override is needed
+# as the build passes CFLAGS on the make command line, which would
+# otherwise silently discard a target-specific append.
+%D%/libgdbstub_a-_os_gdbstub.$(OBJEXT): override CFLAGS += -Os
+
 includetool_DATA += %D%/_os.h
 
 includemachinetooldir = $(tooldir)/include/machine
