@@ -400,13 +400,14 @@ multilibtool_PROGRAMS = $(am__EXEEXT_7)
 @CONFIG_PRU_TRUE@	pru/crt0-minrt.S
 
 @CONFIG_PRU_TRUE@am__append_100 = pru/libgloss.a
-@CONFIG_RISCV_TRUE@am__append_101 = -march=rv32ima_zicsr -I./riscv
+@CONFIG_RISCV_TRUE@am__append_101 = -march=rv32ima_zicsr_zifencei -I./riscv
 @CONFIG_RISCV_TRUE@am__append_102 = riscv/asm-offsets.s riscv/asm-offsets.h
 @CONFIG_RISCV_TRUE@am__append_103 = \
 @CONFIG_RISCV_TRUE@	riscv/nano.specs \
 @CONFIG_RISCV_TRUE@	riscv/crt0.o
 
-@CONFIG_RISCV_TRUE@am__append_104 = riscv/libgloss.a
+@CONFIG_RISCV_TRUE@am__append_104 = riscv/libgloss.a \
+@CONFIG_RISCV_TRUE@	riscv/libgdbstub.a
 @CONFIG_RISCV_TRUE@am__append_105 = riscv/_os.h
 @CONFIG_RL78_TRUE@am__append_106 = rl78/rl78.ld rl78/rl78-sim.ld \
 @CONFIG_RL78_TRUE@	rl78/gcrt0.o rl78/crt0.o rl78/crtn.o
@@ -1337,6 +1338,11 @@ pru_libgloss_a_LIBADD =
 @CONFIG_PRU_TRUE@	pru/outbyte.$(OBJEXT) pru/sbrk.$(OBJEXT) \
 @CONFIG_PRU_TRUE@	pru/stat.$(OBJEXT) pru/syscalls.$(OBJEXT)
 pru_libgloss_a_OBJECTS = $(am_pru_libgloss_a_OBJECTS)
+riscv_libgdbstub_a_AR = $(AR) $(ARFLAGS)
+riscv_libgdbstub_a_LIBADD =
+@CONFIG_RISCV_TRUE@am_riscv_libgdbstub_a_OBJECTS =  \
+@CONFIG_RISCV_TRUE@	riscv/libgdbstub_a-_os_gdbstub.$(OBJEXT)
+riscv_libgdbstub_a_OBJECTS = $(am_riscv_libgdbstub_a_OBJECTS)
 riscv_libgloss_a_AR = $(AR) $(ARFLAGS)
 riscv_libgloss_a_LIBADD =
 @CONFIG_RISCV_TRUE@am_riscv_libgloss_a_OBJECTS = riscv/riscv_libgloss_a-sys_access.$(OBJEXT) \
@@ -2025,6 +2031,7 @@ am__depfiles_remade = ./$(DEPDIR)/close.Po ./$(DEPDIR)/debug.Po \
 	pru/$(DEPDIR)/outbyte.Po pru/$(DEPDIR)/putnum.Po \
 	pru/$(DEPDIR)/raise.Po pru/$(DEPDIR)/sbrk.Po \
 	pru/$(DEPDIR)/stat.Po pru/$(DEPDIR)/syscalls.Po \
+	riscv/$(DEPDIR)/libgdbstub_a-_os_gdbstub.Po \
 	riscv/$(DEPDIR)/riscv_libgloss_a-_os.Po \
 	riscv/$(DEPDIR)/riscv_libgloss_a-lock.Po \
 	riscv/$(DEPDIR)/riscv_libgloss_a-mlock.Po \
@@ -2252,11 +2259,12 @@ SOURCES = $(aarch64_librdimon_a_SOURCES) \
 	$(or1k_libboard_ordb2a_a_SOURCES) \
 	$(or1k_libboard_orpsocrefdesign_a_SOURCES) \
 	$(or1k_libor1k_a_SOURCES) $(pru_libgloss_a_SOURCES) \
-	$(riscv_libgloss_a_SOURCES) $(rl78_libsim_a_SOURCES) \
-	$(rx_libsim_a_SOURCES) $(sparc_libcygmon_a_SOURCES) \
-	$(sparc_liberc32_a_SOURCES) $(sparc_libslite86x_a_SOURCES) \
-	$(sparc_libslite930_a_SOURCES) $(sparc_libslite931_a_SOURCES) \
-	$(sparc_libslite934_a_SOURCES) $(sparc_libsplet701_a_SOURCES) \
+	$(riscv_libgdbstub_a_SOURCES) $(riscv_libgloss_a_SOURCES) \
+	$(rl78_libsim_a_SOURCES) $(rx_libsim_a_SOURCES) \
+	$(sparc_libcygmon_a_SOURCES) $(sparc_liberc32_a_SOURCES) \
+	$(sparc_libslite86x_a_SOURCES) $(sparc_libslite930_a_SOURCES) \
+	$(sparc_libslite931_a_SOURCES) $(sparc_libslite934_a_SOURCES) \
+	$(sparc_libsplet701_a_SOURCES) \
 	$(sparc_leon_liblbthread_a_SOURCES) \
 	$(sparc_leon_libleonbare_a_SOURCES) \
 	$(sparc_leon_libsmall_a_SOURCES) $(tic6x_libsim_a_SOURCES) \
@@ -3239,6 +3247,8 @@ TEXINFO_TEX = ../texinfo/texinfo.tex
 @CONFIG_RISCV_TRUE@	riscv/lock.c \
 @CONFIG_RISCV_TRUE@	riscv/_os.c
 
+@CONFIG_RISCV_TRUE@riscv_libgdbstub_a_CPPFLAGS = -I$(srcdir)/riscv
+@CONFIG_RISCV_TRUE@riscv_libgdbstub_a_SOURCES = riscv/_os_gdbstub.c
 @CONFIG_RISCV_TRUE@includemachinetooldir = $(tooldir)/include/machine
 @CONFIG_RISCV_TRUE@includemachinetool_DATA = riscv/machine/syscall.h
 @CONFIG_RL78_TRUE@rl78_libsim_a_SOURCES = \
@@ -5302,6 +5312,13 @@ riscv/$(am__dirstamp):
 riscv/$(DEPDIR)/$(am__dirstamp):
 	@$(MKDIR_P) riscv/$(DEPDIR)
 	@: > riscv/$(DEPDIR)/$(am__dirstamp)
+riscv/libgdbstub_a-_os_gdbstub.$(OBJEXT): riscv/$(am__dirstamp) \
+	riscv/$(DEPDIR)/$(am__dirstamp)
+
+riscv/libgdbstub.a: $(riscv_libgdbstub_a_OBJECTS) $(riscv_libgdbstub_a_DEPENDENCIES) $(EXTRA_riscv_libgdbstub_a_DEPENDENCIES) riscv/$(am__dirstamp)
+	$(AM_V_at)-rm -f riscv/libgdbstub.a
+	$(AM_V_AR)$(riscv_libgdbstub_a_AR) riscv/libgdbstub.a $(riscv_libgdbstub_a_OBJECTS) $(riscv_libgdbstub_a_LIBADD)
+	$(AM_V_at)$(RANLIB) riscv/libgdbstub.a
 riscv/riscv_libgloss_a-sys_access.$(OBJEXT): riscv/$(am__dirstamp) \
 	riscv/$(DEPDIR)/$(am__dirstamp)
 riscv/riscv_libgloss_a-sys_chdir.$(OBJEXT): riscv/$(am__dirstamp) \
@@ -6461,6 +6478,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@pru/$(DEPDIR)/sbrk.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@pru/$(DEPDIR)/stat.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@pru/$(DEPDIR)/syscalls.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@riscv/$(DEPDIR)/libgdbstub_a-_os_gdbstub.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@riscv/$(DEPDIR)/riscv_libgloss_a-_os.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@riscv/$(DEPDIR)/riscv_libgloss_a-lock.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@riscv/$(DEPDIR)/riscv_libgloss_a-mlock.Po@am__quote@ # am--include-marker
@@ -8435,6 +8453,20 @@ nios2/libnios2_a-sbrk.obj: nios2/sbrk.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(nios2_libnios2_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o nios2/libnios2_a-sbrk.obj `if test -f 'nios2/sbrk.c'; then $(CYGPATH_W) 'nios2/sbrk.c'; else $(CYGPATH_W) '$(srcdir)/nios2/sbrk.c'; fi`
 
+riscv/libgdbstub_a-_os_gdbstub.o: riscv/_os_gdbstub.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(riscv_libgdbstub_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT riscv/libgdbstub_a-_os_gdbstub.o -MD -MP -MF riscv/$(DEPDIR)/libgdbstub_a-_os_gdbstub.Tpo -c -o riscv/libgdbstub_a-_os_gdbstub.o `test -f 'riscv/_os_gdbstub.c' || echo '$(srcdir)/'`riscv/_os_gdbstub.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) riscv/$(DEPDIR)/libgdbstub_a-_os_gdbstub.Tpo riscv/$(DEPDIR)/libgdbstub_a-_os_gdbstub.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='riscv/_os_gdbstub.c' object='riscv/libgdbstub_a-_os_gdbstub.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(riscv_libgdbstub_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o riscv/libgdbstub_a-_os_gdbstub.o `test -f 'riscv/_os_gdbstub.c' || echo '$(srcdir)/'`riscv/_os_gdbstub.c
+
+riscv/libgdbstub_a-_os_gdbstub.obj: riscv/_os_gdbstub.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(riscv_libgdbstub_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT riscv/libgdbstub_a-_os_gdbstub.obj -MD -MP -MF riscv/$(DEPDIR)/libgdbstub_a-_os_gdbstub.Tpo -c -o riscv/libgdbstub_a-_os_gdbstub.obj `if test -f 'riscv/_os_gdbstub.c'; then $(CYGPATH_W) 'riscv/_os_gdbstub.c'; else $(CYGPATH_W) '$(srcdir)/riscv/_os_gdbstub.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) riscv/$(DEPDIR)/libgdbstub_a-_os_gdbstub.Tpo riscv/$(DEPDIR)/libgdbstub_a-_os_gdbstub.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='riscv/_os_gdbstub.c' object='riscv/libgdbstub_a-_os_gdbstub.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(riscv_libgdbstub_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o riscv/libgdbstub_a-_os_gdbstub.obj `if test -f 'riscv/_os_gdbstub.c'; then $(CYGPATH_W) 'riscv/_os_gdbstub.c'; else $(CYGPATH_W) '$(srcdir)/riscv/_os_gdbstub.c'; fi`
+
 riscv/riscv_libgloss_a-sys_access.o: riscv/sys_access.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(riscv_libgloss_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT riscv/riscv_libgloss_a-sys_access.o -MD -MP -MF riscv/$(DEPDIR)/riscv_libgloss_a-sys_access.Tpo -c -o riscv/riscv_libgloss_a-sys_access.o `test -f 'riscv/sys_access.c' || echo '$(srcdir)/'`riscv/sys_access.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) riscv/$(DEPDIR)/riscv_libgloss_a-sys_access.Tpo riscv/$(DEPDIR)/riscv_libgloss_a-sys_access.Po
@@ -10103,6 +10135,7 @@ distclean: distclean-recursive
 	-rm -f pru/$(DEPDIR)/sbrk.Po
 	-rm -f pru/$(DEPDIR)/stat.Po
 	-rm -f pru/$(DEPDIR)/syscalls.Po
+	-rm -f riscv/$(DEPDIR)/libgdbstub_a-_os_gdbstub.Po
 	-rm -f riscv/$(DEPDIR)/riscv_libgloss_a-_os.Po
 	-rm -f riscv/$(DEPDIR)/riscv_libgloss_a-lock.Po
 	-rm -f riscv/$(DEPDIR)/riscv_libgloss_a-mlock.Po
@@ -10997,6 +11030,7 @@ maintainer-clean: maintainer-clean-recursive
 	-rm -f pru/$(DEPDIR)/sbrk.Po
 	-rm -f pru/$(DEPDIR)/stat.Po
 	-rm -f pru/$(DEPDIR)/syscalls.Po
+	-rm -f riscv/$(DEPDIR)/libgdbstub_a-_os_gdbstub.Po
 	-rm -f riscv/$(DEPDIR)/riscv_libgloss_a-_os.Po
 	-rm -f riscv/$(DEPDIR)/riscv_libgloss_a-lock.Po
 	-rm -f riscv/$(DEPDIR)/riscv_libgloss_a-mlock.Po
@@ -11442,6 +11476,12 @@ maintainer-clean-local: maintainer-clean-multi
 @CONFIG_RISCV_TRUE@	$(call make_asm_offsets)
 
 @CONFIG_RISCV_TRUE@riscv/crt0.o: riscv/asm-offsets.h
+# Optimize the gdbstub for size; appended after CFLAGS, the -Os
+# overrides the -O that the toolchain build passes down through
+# CFLAGS_FOR_TARGET (ie: the last -O flag wins); override is needed
+# as the build passes CFLAGS on the make command line, which would
+# otherwise silently discard a target-specific append.
+@CONFIG_RISCV_TRUE@riscv/libgdbstub_a-_os_gdbstub.$(OBJEXT): override CFLAGS += -Os
 @CONFIG_SPARC_TRUE@@SPARC_BUILD_CYGMON_TRUE@sparc/cygmon.ld: $(srcdir)/sparc/@SPARC_CYGMONLDSCRIPTTEMPL@ sparc/Makefile.inc
 @CONFIG_SPARC_TRUE@@SPARC_BUILD_CYGMON_TRUE@	$(AM_V_GEN)sed 's/TARGET_OBJ_FORMAT/$(sparc_$(SPARC_CPU)_OBJ_FORMAT)/g;s/TARGET_RAM_START/$(sparc_$(SPARC_CPU)_RAM_START)/g;' < $< > $@
 
