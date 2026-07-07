@@ -1,5 +1,5 @@
 
-CPPFLAGS += -march=rv32ima_zicsr -I./%D%
+CPPFLAGS += -march=rv32ima_zicsr_zifencei -I./%D%
 
 define sed-y
 	's:^[[:space:]]*\.ascii[[:space:]]*"\(.*\)".*:\1:; \
