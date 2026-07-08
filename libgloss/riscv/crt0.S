@@ -360,6 +360,11 @@ __switchctx:
   la sp, __trap_stacks
   add sp, sp, t0
   mv tp, x0
+  /* Clear mscratch, which is still non-null when a thread parked itself
+     from a trap handling; a trap taken while idle would otherwise
+     mistake the idle context for an interrupted trap handling, and
+     mret past the wfi into the null-tp restore path below. */
+  csrw mscratch, x0
   csrs mstatus, 0x8 /* Set mstatus.mie to enable IRQs */
   wfi
 0:
