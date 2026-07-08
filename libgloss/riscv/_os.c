@@ -886,6 +886,12 @@ void _thread_kill (_thread_t *thrd) {
 void _thread_dispose (_thread_t *thrd) {
 	if (!_is_thread_terminated(thrd))
 		_oops();
+	// When the gdbstub is linked-in, let it purge its references to
+	// the thread (ie: its parked bookkeeping and the __gdbstub_tp
+	// selection), as the memory holding the _thread_t is freed below.
+	extern void _gdbstub_thread_disposed (_thread_t *thrd) __attribute__((weak));
+	if (_gdbstub_thread_disposed)
+		_gdbstub_thread_disposed(thrd);
 	if (thrd->stack)
 		free(thrd->stack);
 }
