@@ -51,11 +51,13 @@
 // followed by the v1 stub for every stop.
 //
 // The debugging transport is by default the serial_pty0 device mapped
-// at 0xe80 (irqctrl source 1); an application can retarget it defining
-// strong versions of the weak configuration globals _gdbstub_dev and
-// _gdbstub_irq; similarly _gdbstub_membeg/_gdbstub_memend bound the
-// memory that gdb is allowed to access (accessing an unmapped address
-// terminates the simulation, hence out-of-bounds requests are refused).
+// at 0xe80 (irqctrl source 1); an application can retarget it from the
+// link line with -Wl,--defsym=_gdbstub_dev=<addr> and
+// -Wl,--defsym=_gdbstub_irq=<n> (the symbol ADDRESS is the value; see the
+// configuration block below); similarly --defsym=_gdbstub_membeg/
+// _gdbstub_memend bound the memory that gdb is allowed to access
+// (accessing an unmapped address terminates the simulation, hence
+// out-of-bounds requests are refused).
 //
 // Software breakpoints (gdb writes an ebreak using the M packet) and
 // single-stepping (the stub plants temporary ebreak at the successor
@@ -73,11 +75,59 @@
 #include <machine/hwdrvchar.h>
 #include <machine/hwdrvirqctrl.h>
 
-// Configuration; weak so that an application can override them.
-__attribute__((weak)) void *_gdbstub_dev = (void *)0xe80;
-__attribute__((weak)) uintptr_t _gdbstub_irq = 1;
-__attribute__((weak)) uintptr_t _gdbstub_membeg = 0x1000;
-__attribute__((weak)) uintptr_t _gdbstub_memend = 0; // Null selects roundup(__heap_end, 1KB).
+// Configuration; the ADDRESS of each symbol is its value, so that an
+// application can retarget them from the link line, ie:
+//	-Wl,--defsym=_gdbstub_dev=0xf88 -Wl,--defsym=_gdbstub_irq=1
+// (--defsym defines a symbol's address, not the contents of a variable).
+// They are undefined weak symbols, hence resolve to address 0 when the
+// application defines none, in which case the defaults in the accessors
+// below apply. 0 is the "unset" sentinel: no non-zero default collides
+// with it, and _gdbstub_memend's default 0 already means "auto" (see its
+// accessor). Corollary: irq source 0 -- a valid controller index, but the
+// console source, never a gdb transport -- is not selectable this way (it
+// reads as "unset"), which costs nothing. NOTE: a plain application
+// definition such as
+// "void *_gdbstub_dev = (void *)0xf88;" does NOT work here (the library
+// reads the symbol ADDRESS, not a stored value); use --defsym, or an
+// equivalent absolute definition such as asm(".global _gdbstub_dev\n"
+// ".set _gdbstub_dev, 0xf88\n"), in a SEPARATE object so the compiler
+// cannot bake the address into this file at build time.
+extern char _gdbstub_dev[]    __attribute__((weak));
+extern char _gdbstub_irq[]    __attribute__((weak));
+extern char _gdbstub_membeg[] __attribute__((weak));
+extern char _gdbstub_memend[] __attribute__((weak));
+
+// Resolve each configuration symbol to its value, falling back to the
+// default when the symbol is absent (address 0). Read on each use, as
+// the device accessors run before the constructor (pre-constructor fault
+// servicing), hence cannot rely on a cached value.
+//
+// The default lives in this C ternary and NOT in an in-file weak absolute
+// default such as asm(".weak _gdbstub_dev\n.set _gdbstub_dev, 0xe80\n"):
+// were the default defined in this same translation unit, an optimizing
+// compile (this file builds -Os, but it holds at any -O) would treat the
+// symbol as a known local absolute and BAKE that value into the code as an
+// immediate, so a link-line --defsym would then
+// update the symbol table but not the already-materialized instructions
+// (the code keeps using 0xe80 while nm shows the --defsym value). Keeping
+// the symbol UNDEFINED weak here instead forces the compiler to emit a
+// relocation the linker resolves (to the --defsym value when present, else
+// to 0, which selects the C default below), which is what makes the
+// address-taking override work at all. --defsym (or an absolute .set in a
+// SEPARATE object, for the same baking reason) is therefore the only way
+// to retarget these.
+static inline void *gdbstub_devaddr (void) {
+	return ((uintptr_t)_gdbstub_dev ? (void *)(uintptr_t)_gdbstub_dev : (void *)0xe80);
+}
+static inline uintptr_t gdbstub_irqno (void) {
+	return ((uintptr_t)_gdbstub_irq ? (uintptr_t)_gdbstub_irq : (uintptr_t)1);
+}
+static inline uintptr_t gdbstub_membeg (void) {
+	return ((uintptr_t)_gdbstub_membeg ? (uintptr_t)_gdbstub_membeg : (uintptr_t)0x1000);
+}
+static inline uintptr_t gdbstub_memend (void) {
+	return (uintptr_t)_gdbstub_memend; // 0 selects roundup(__heap_end, 1KB).
+}
 
 // Referenced by _os.c to detect that the gdbstub is linked-in.
 char _gdbstub_active = 1;
@@ -166,7 +216,7 @@ static void gdbstub_emergency (uintptr_t signum);
 // ****************************************************************************
 
 // hwdrvchar_t instance used with <machine/hwdrvchar.h>; its field addr
-// gets loaded from the weak _gdbstub_dev at each use; hwdrvchar_init()
+// gets loaded from gdbstub_devaddr() at each use; hwdrvchar_init()
 // is not needed as only hwdrvchar_readable() and hwdrvchar_interrupt()
 // are used, which do not depend on the fields it fills.
 static hwdrvchar_t gdbstub_hwdrvchar;
@@ -177,17 +227,17 @@ static hwdrvchar_t gdbstub_hwdrvchar;
 // using gdbstub_rxusage() so that the application
 // is not frozen awaiting gdb bytes.
 static int gdbstub_getc (void) {
-	return *(volatile unsigned char *)_gdbstub_dev;
+	return *(volatile unsigned char *)gdbstub_devaddr();
 }
 
 // Write a byte to the serial device; it never blocks.
 static void gdbstub_putc (int c) {
-	*(volatile unsigned char *)_gdbstub_dev = c;
+	*(volatile unsigned char *)gdbstub_devaddr() = c;
 }
 
 // Return the count of bytes that can be read without blocking.
 static uintptr_t gdbstub_rxusage (void) {
-	gdbstub_hwdrvchar.addr = _gdbstub_dev;
+	gdbstub_hwdrvchar.addr = gdbstub_devaddr();
 	return hwdrvchar_readable(&gdbstub_hwdrvchar);
 }
 
@@ -196,7 +246,7 @@ static uintptr_t gdbstub_rxusage (void) {
 // The device disables its interrupt when acknowledged, hence this must
 // be called again after each interrupt service.
 static void gdbstub_setintr (uintptr_t threshold) {
-	gdbstub_hwdrvchar.addr = _gdbstub_dev;
+	gdbstub_hwdrvchar.addr = gdbstub_devaddr();
 	hwdrvchar_interrupt(&gdbstub_hwdrvchar, threshold);
 }
 
@@ -206,7 +256,7 @@ static void gdbstub_setintr (uintptr_t threshold) {
 // which the device gates on the previous command being completed),
 // which would otherwise make every accessor above wait forever.
 static void gdbstub_dev_recover (void) {
-	(void)_xchg((uintptr_t *)(_gdbstub_dev + sizeof(uintptr_t)),
+	(void)_xchg((uintptr_t *)((char *)gdbstub_devaddr() + sizeof(uintptr_t)),
 		(uintptr_t)HWDRVCHAR_CMDDEVRDY);
 }
 
@@ -291,9 +341,9 @@ static bool gdbstub_memok (uintptr_t addr, uintptr_t len) {
 static void gdbstub_bounds_init (void) {
 	if (gdbstub.memend)
 		return;
-	gdbstub.membeg = _gdbstub_membeg;
-	if (_gdbstub_memend)
-		gdbstub.memend = _gdbstub_memend;
+	gdbstub.membeg = gdbstub_membeg();
+	if (gdbstub_memend())
+		gdbstub.memend = gdbstub_memend();
 	else {
 		// Round up to 1KB; the RAM top is 1KB aligned and __heap_end
 		// is at most a small carve-out (TLS and main _thread_t) below
@@ -2062,10 +2112,10 @@ __attribute__((constructor)) static void gdbstub_init (void) {
 	// to be called from gdb.
 	__asm__ __volatile__ ("" ::
 		"r"(__gdbstub_next), "r"(__gdbstub_last), "r"(__gdbstub_parked));
-	_irq_init(&gdbstub_irq_st, _gdbstub_irq, gdbstub_irq);
+	_irq_init(&gdbstub_irq_st, gdbstub_irqno(), gdbstub_irq);
 	_irq_register(&gdbstub_irq_st);
 	_preempt_disable(); // Insure the irqctrl transaction is not interrupted.
-	hwdrvirqctrl_ena(_gdbstub_irq, 1);
+	hwdrvirqctrl_ena(gdbstub_irqno(), 1);
 	_preempt_enable();
 	gdbstub_setintr(1);
 }
