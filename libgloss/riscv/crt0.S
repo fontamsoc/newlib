@@ -61,6 +61,10 @@ _start:
   csrs mstatus, 0x8 /* Set mstatus.mie to enable IRQs */
   wfi
 1:
+  # Oops if memory ends below _end, ie: if the image does not fit
+  # in memory; it must be done before the first memory access below.
+  la    t0, _end
+  bltu  sp, t0, __oops_ram
   # Check whether saving/restoring .data .
   REG_L a2, __rst_flg
   bnez  a2, 0f
@@ -112,8 +116,11 @@ _start:
   mv    tp, sp
   andi  sp, sp, ~15 # RISC-V required stack alignment.
 
-  # Init __heap_ptr to _end, and __heap_end to the value of register sp.
   la    t1, _end
+  # Oops if we would get (__heap_end < __heap_ptr); ie:
+  # memory too small for the image and what got carved off register sp.
+  bltu  sp, t1, __oops
+  # Init __heap_ptr to _end, and __heap_end to the value of register sp.
   REG_S t1, __heap_ptr, t0
   REG_S sp, __heap_end, t0
 
@@ -145,6 +152,45 @@ _start:
   tail  exit
 
   .size _start, .-_start
+
+
+  # Park the cpu with a defined signature when booting cannot proceed.
+  # Register a0 has the oops code, register a1 has the __heap_ptr value,
+  # ie: _end, and register a2 has the __heap_end value, ie: register sp.
+  # "OOPS" and the oops code get written to the serial device computed
+  # from registers only, as memory is what cannot be trusted here; mtvec
+  # gets nulled to insure that a stray trap indefinitely halts the cpu
+  # instead of running __trap on an unusable stack.
+  .global __oops_ram
+  .type   __oops_ram, @function
+__oops_ram:
+  li   a0, 0x4f4f5001 # Ascii "OOP" and the reason 1 (memory end < _end).
+  j    0f
+  .size __oops_ram, .-__oops_ram
+
+  .global __oops
+  .type   __oops, @function
+__oops:
+  li   a0, 0x4f4f5002 # Ascii "OOP" and the reason 2 (__heap_end < __heap_ptr).
+0:la   a1, _end
+  mv   a2, sp
+  li   t0, SERIAL0_ADDR
+  li   t1, 0x4f # 'O'
+  sb   t1, 0(t0)
+  sb   t1, 0(t0)
+  li   t1, 0x50 # 'P'
+  sb   t1, 0(t0)
+  li   t1, 0x53 # 'S'
+  sb   t1, 0(t0)
+  addi t1, a0, '0'
+  sb   t1, 0(t0)
+  li   t1, 0x0a # '\n'
+  sb   t1, 0(t0)
+  csrw mtvec, x0
+  ebreak # Indefinitely halt the cpu; it also ends a simulation.
+1:wfi # mstatus.mie is off, so wfi never traps.
+  j 1b
+  .size __oops, .-__oops
 
 
   .text
