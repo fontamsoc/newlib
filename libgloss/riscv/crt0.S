@@ -61,6 +61,7 @@ _start:
   csrs mstatus, 0x8 /* Set mstatus.mie to enable IRQs */
   wfi
 1:
+  # Check whether saving/restoring .data .
   REG_L a2, __rst_flg
   bnez  a2, 0f
   # Save .data section to the stack bottom.
@@ -85,12 +86,12 @@ _start:
   li   a1, 0
   call memset
 
-  # Stack layout:
+  # Ascending stack layout:
   # ------------------------ Start of stack.
   # | Stack Data           |
   # ------------------------ <- Stack pointer when calling main().
   # | TLS Data             |
-  # | _thread_t is first   |
+  # | _thread_t+tdata+tbss |
   # ------------------------ End of stack.
 
   # Init TLS.
