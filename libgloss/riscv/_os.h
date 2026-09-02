@@ -112,7 +112,8 @@ void _irq_unregister (_irq_t *i);
 // Called from the trap handler, with IRQs disabled, when the default device
 // reports an access to an unmapped address; the argument is the address that
 // the device recorded, which is the address as seen on the bus, ie: the bits
-// beyond the address bus width are ored into its most significant bit.
+// beyond the address bus width are ored into its most significant bit, which
+// is sign extended, hence an address beyond the address bus reads negative.
 // It is weak, and by default it prints "==== OOPS CPU<n> 0x<pc> dfltdev 0x<addr> ===="
 // then halts the system; an application defines it to handle the fault instead,
 // under the same rules as an _irq_t callback, and must expect it from any CPU.
