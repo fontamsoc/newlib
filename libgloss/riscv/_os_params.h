@@ -23,4 +23,7 @@
 
 #define SERIAL0_ADDR (0xf80 /* By convention, the first UART is located at 0xf80 */)
 
+#define DFLTDEV_ADDR (-4 /* By convention, the default device fault address register is the last 32bits word of the address space */)
+#define DFLTDEV_IRQ (0 /* By convention, the default device is the interrupt source 0 */)
+
 #endif /* __LIBGLOSS_RISCV__OS_PARAMS_H */

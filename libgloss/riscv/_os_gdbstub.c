@@ -56,8 +56,9 @@
 // -Wl,--defsym=_gdbstub_irq=<n> (the symbol ADDRESS is the value; see the
 // configuration block below); similarly --defsym=_gdbstub_membeg/
 // _gdbstub_memend bound the memory that gdb is allowed to access
-// (accessing an unmapped address terminates the simulation, hence
-// out-of-bounds requests are refused).
+// (accessing an unmapped address terminates the simulation, or gets
+// reported by the default device on hardware, hence out-of-bounds
+// requests are refused).
 //
 // Software breakpoints (gdb writes an ebreak using the M packet) and
 // single-stepping (the stub plants temporary ebreak at the successor
@@ -83,9 +84,10 @@
 // application defines none, in which case the defaults in the accessors
 // below apply. 0 is the "unset" sentinel: no non-zero default collides
 // with it, and _gdbstub_memend's default 0 already means "auto" (see its
-// accessor). Corollary: irq source 0 -- a valid controller index, but the
-// console source, never a gdb transport -- is not selectable this way (it
-// reads as "unset"), which costs nothing. NOTE: a plain application
+// accessor). Corollary: irq source 0 -- a valid controller index, but by
+// convention the default device source (the console source in rv32-sim),
+// never a gdb transport -- is not selectable this way (it reads as
+// "unset"), which costs nothing. NOTE: a plain application
 // definition such as
 // "void *_gdbstub_dev = (void *)0xf88;" does NOT work here (the library
 // reads the symbol ADDRESS, not a stored value); use --defsym, or an

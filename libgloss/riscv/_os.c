@@ -34,6 +34,18 @@ __attribute__((noinline)) static void __printstr (char *s) {
 
 uint8_t __trap_stacks[NCPU][TRAP_STACK_SIZE];
 
+// Halt the system, or break into the debugger when the gdbstub is linked-in.
+__attribute__((noreturn)) static void __halt (void) {
+	// When the gdbstub is linked-in, keep mtvec valid so that
+	// the ebreak breaks into the debugger instead of shutting down.
+	extern char _gdbstub_active __attribute__((weak));
+	if (&_gdbstub_active)
+		__asm__ __volatile__ ("ebreak\n" ::: "memory");
+	else
+		__asm__ __volatile__ ("csrw mtvec, x0; ebreak\n" ::: "memory");
+	while(1);
+}
+
 bool __trap_exc_ecall_m (void) {
 	_savedctx_t *savedctx = _trap_savedctx();
 	switch (savedctx->a7) {
@@ -41,14 +53,7 @@ bool __trap_exc_ecall_m (void) {
 			__printstr("==== OOPS CPU"); __printdec(_cpuid());
 			__printstr(" 0x"); __printhex(savedctx->epc);
 			__printstr(" ====\n");
-			// When the gdbstub is linked-in, keep mtvec valid so that
-			// the ebreak breaks into the debugger instead of shutting down.
-			extern char _gdbstub_active __attribute__((weak));
-			if (&_gdbstub_active)
-				__asm__ __volatile__ ("ebreak\n" ::: "memory");
-			else
-				__asm__ __volatile__ ("csrw mtvec, x0; ebreak\n" ::: "memory");
-			while(1);
+			__halt();
 		default:
 			savedctx->a0 = -1;
 	}
@@ -251,6 +256,31 @@ static uintptr_t __irq_ack (uintptr_t en) {
 	_xchg(&irqctrl_lock, 0);
 	return ret;
 }
+
+// Enable/Disable the interrupt source given as argument.
+// Returns the interrupt source number if valid, otherwise returns -1.
+static uintptr_t __irq_ena (uintptr_t src, uintptr_t en) {
+	while (_xchg(&irqctrl_lock, 1));
+	uintptr_t ret = hwdrvirqctrl_ena(src, en);
+	_xchg(&irqctrl_lock, 0);
+	return ret;
+}
+
+// Default device interrupt, raised by an access to an unmapped address,
+// which is reported through __irq_dfltdev() with the address that the device recorded.
+__attribute__((weak)) void __irq_dfltdev (uintptr_t addr) {
+	__printstr("==== OOPS CPU"); __printdec(_cpuid());
+	__printstr(" 0x"); __printhex(_trap_savedctx()->epc);
+	__printstr(" dfltdev 0x"); __printhex(addr);
+	__printstr(" ====\n");
+	__halt();
+}
+
+static void __dfltdev_irq (_irq_t *i) {
+	__irq_dfltdev(*(volatile uint32_t *)(uintptr_t)DFLTDEV_ADDR);
+}
+
+static _IRQ_DEF(__dfltdev, DFLTDEV_IRQ, __dfltdev_irq);
 
 bool __trap_irq (void) {
 	_savedctx_t *savedctx = _trap_savedctx();
@@ -676,7 +706,11 @@ void __init_multithreading (_thread_t *thrd) {
 	thrd->savedctx = (_savedctx_t *)-1; // Set so thread is not seen as terminated.
 	_irq_init(&__ipi, -1, __ipi_preempt);
 	_irq_register(&__ipi);
+	_irq_register(&__dfltdev);
 	__irq_ack(1); // Enable interrupt delivery.
+	_preempt_disable(); // Insure the irqctrl transaction is not interrupted.
+	__irq_ena(DFLTDEV_IRQ, 1); // Enable reporting accesses to unmapped addresses.
+	_preempt_enable();
 	__ncpu += 1;
 	// Send IPIs to start the other CPUs.
 	for (uintptr_t i = 1;; ++i) {

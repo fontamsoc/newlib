@@ -109,6 +109,19 @@ typedef struct _irq {
 void _irq_register (_irq_t *i);
 void _irq_unregister (_irq_t *i);
 
+// Called from the trap handler, with IRQs disabled, when the default device
+// reports an access to an unmapped address; the argument is the address that
+// the device recorded, which is the address as seen on the bus, ie: the bits
+// beyond the address bus width are ored into its most significant bit.
+// It is weak, and by default it prints "==== OOPS CPU<n> 0x<pc> dfltdev 0x<addr> ===="
+// then halts the system; an application defines it to handle the fault instead,
+// under the same rules as an _irq_t callback, and must expect it from any CPU.
+// The interrupt being asynchronous, the pc from _trap_savedctx()->epc is only
+// close to the faulty access, and in a multi-CPU system it can belong to a CPU
+// other than the one that faulted. Instructions fetched from an unmapped address
+// execute as NOP, hence returning without changing that pc resumes fetching them.
+void __irq_dfltdev (uintptr_t addr);
+
 typedef struct {
 	uintptr_t lock;
 	uintptr_t p; // Count of threads about to add themselves to the wait-queue;
