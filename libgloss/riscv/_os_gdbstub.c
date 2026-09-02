@@ -85,9 +85,9 @@
 // below apply. 0 is the "unset" sentinel: no non-zero default collides
 // with it, and _gdbstub_memend's default 0 already means "auto" (see its
 // accessor). Corollary: irq source 0 -- a valid controller index, but by
-// convention the default device source (the console source in rv32-sim),
-// never a gdb transport -- is not selectable this way (it reads as
-// "unset"), which costs nothing. NOTE: a plain application
+// convention the default device source, never a gdb transport -- is not
+// selectable this way (it reads as "unset"), which costs nothing. NOTE: a
+// plain application
 // definition such as
 // "void *_gdbstub_dev = (void *)0xf88;" does NOT work here (the library
 // reads the symbol ADDRESS, not a stored value); use --defsym, or an
