@@ -85,6 +85,21 @@ _start:
   mv    a0, sp
   REG_S a2, __rst_flg, t0
   call  memcpy
+  # Push the copy and __rst_flg past the write-back dcache, whose dirty
+  # words a reset discards: a warm boot following this cold boot would
+  # otherwise restore .data from a copy which never reached memory.
+  la    t0, __DATA_BEGIN__
+  la    t1, _edata
+  sub   t1, t1, t0
+  add   t1, t1, sp
+  mv    t0, sp
+4:REG_L t2, 0(t0)
+  AMOSWAP x0, t2, (t0)
+  addi  t0, t0, SZREG
+  bltu  t0, t1, 4b
+  la    t0, __rst_flg
+  REG_L t2, 0(t0)
+  AMOSWAP x0, t2, (t0)
   j 1f
 0:# Restore .data section from the stack bottom.
   la    a0, __DATA_BEGIN__
