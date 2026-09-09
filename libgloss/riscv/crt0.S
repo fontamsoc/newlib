@@ -107,6 +107,11 @@ _start:
   mv    a1, sp
   call  memcpy
 1:
+  # Let the gdbstub take over the boot when a program reload is pending:
+  # .data is pristine, .bss is not yet cleared, the secondary harts are
+  # still spinning and tp is not set, ie: the hook must not touch
+  # _thread_cur, which is tp.
+  call __gdbstub_boot
   # Init BSS up to __bss_end; .noinit follows it untouched, .persistent precedes __bss_start.
   la   a0, __bss_start
   la   a2, __bss_end

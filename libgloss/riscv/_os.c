@@ -1147,3 +1147,8 @@ __attribute__((weak)) bool __trap_exc_insn_pfault (void) { while(1); }
 __attribute__((weak)) bool __trap_exc_load_pfault (void) { while(1); }
 __attribute__((weak)) bool __trap_exc_store_pfault (void) { while(1); }
 __attribute__((weak)) bool __trap_exc_inv (void) { while(1); }
+
+// Boot hook, called by _start() once .data has been saved or restored and
+// before .bss gets cleared; weak so that a library (ie: libgdbstub.a) can
+// override it. Register tp is not yet set when it runs.
+__attribute__((weak)) void __gdbstub_boot (void) {}
