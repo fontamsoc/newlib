@@ -23,6 +23,15 @@
 
 #define SERIAL0_ADDR (0xf80 /* By convention, the first UART is located at 0xf80 */)
 
+// Value which, xored with a hart id, releases that hart from its boot spin
+// on __ncpu_rendezvous; its top byte is non-null so that a null word, ie:
+// the .bss clear or a load transient starting from zero, matches no hart,
+// and its low byte is null so that a byte-wise zeroing of the word matches
+// hart 0 only, which never spins. It must be materialized by li and never
+// stored as a data word, so that no image carries a hart's target; its
+// bits 14:12 being 011, no rv32ima instruction word equals one either.
+#define RENDEZVOUS_MAGIC 0x5AFE3A00
+
 #define DFLTDEV_ADDR (-4 /* By convention, the default device fault address register is the last 32bits word of the address space */)
 #define DFLTDEV_IRQ (0 /* By convention, the default device is the interrupt source 0 */)
 

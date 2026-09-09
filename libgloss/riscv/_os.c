@@ -594,6 +594,9 @@ void _fifo_rst (_fifo_t *f) {
 }
 
 volatile uintptr_t __ncpu = 0;
+// Releases the secondary harts from their boot spin, one at a time: hart i
+// starts when it holds (i ^ RENDEZVOUS_MAGIC); see RENDEZVOUS_MAGIC.
+volatile uintptr_t __ncpu_rendezvous = 0;
 // Return number of CPUs that have booted.
 uintptr_t _ncpu (void) {
 	return __ncpu;
@@ -725,6 +728,7 @@ void __init_multithreading (_thread_t *thrd) {
 	__irq_ena(DFLTDEV_IRQ, 1); // Enable reporting accesses to unmapped addresses.
 	_preempt_enable();
 	__ncpu += 1;
+	__ncpu_rendezvous = (__ncpu ^ RENDEZVOUS_MAGIC); // Release hart 1.
 	// Send IPIs to start the other CPUs.
 	for (uintptr_t i = 1;; ++i) {
 		if (i >= NCPU) // Harts for which (mhartid >= NCPU) park in _start(). TODO: To be removed once percpu support is complete.

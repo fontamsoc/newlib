@@ -310,6 +310,7 @@ void _thread_exit (void);
 #define _is_thread_running(X) ((X)->state == _THREAD_RUNNING)
 
 uintptr_t _ncpu (void);
+extern volatile uintptr_t __ncpu_rendezvous; // Boot rendezvous of the secondary harts; see _os_params.h.
 // Reset the system through the interrupt controller; it never returns.
 void _sysreset (void) __attribute__((noreturn));
 

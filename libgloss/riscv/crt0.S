@@ -40,19 +40,28 @@ _start:
 2:wfi
   j 2b
 0:
-  # For an SOC where all cores start, loop here until (__ncpu == mhartid).
-  la    s1, __ncpu
+  # For an SOC where all cores start, loop here until __ncpu_rendezvous
+  # holds (mhartid ^ RENDEZVOUS_MAGIC): unlike a count, a stale value, ie:
+  # from an image being loaded over this one, cannot release a hart early.
+  la    s1, __ncpu_rendezvous
+  li    t1, RENDEZVOUS_MAGIC
+  xor   t1, t1, s0
 0:REG_L t0, 0(s1)
-  bne   s0, t0, 0b
+  bne   t0, t1, 0b
   # Use temporary trap stack right below the stack currently used by CPU 0.
   REG_L sp,__heap_end
   addi  sp, sp, -TRAP_STACK_SIZE
   mv tp, x0
   call __init_secondary_cpu
-  # Increment __ncpu. Saved register s1 has __ncpu address.
-  REG_L t0, 0(s1)
+  # Increment __ncpu, then release the next hart through __ncpu_rendezvous,
+  # whose address saved register s1 holds; both are word stores.
+  la    t2, __ncpu
+  REG_L t0, 0(t2)
   addi  t0, t0, 1
-  REG_S t0, 0(s1)
+  REG_S t0, 0(t2)
+  li    t1, RENDEZVOUS_MAGIC
+  xor   t1, t1, t0
+  REG_S t1, 0(s1)
   # Compute trap stack. Saved register s0 has mhartid value. TODO: Only after percpu data has been setup ...
   slli s0, s0, TRAP_STACK_SHIFT
   addi s0, s0, TRAP_STACK_SIZE
