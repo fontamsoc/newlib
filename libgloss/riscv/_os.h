@@ -310,5 +310,7 @@ void _thread_exit (void);
 #define _is_thread_running(X) ((X)->state == _THREAD_RUNNING)
 
 uintptr_t _ncpu (void);
+// Reset the system through the interrupt controller; it never returns.
+void _sysreset (void) __attribute__((noreturn));
 
 #endif /* __LIBGLOSS_RISCV__OS_H */

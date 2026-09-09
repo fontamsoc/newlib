@@ -599,6 +599,19 @@ uintptr_t _ncpu (void) {
 	return __ncpu;
 }
 
+// Reset the system through the interrupt controller; it never returns.
+// Interrupts are disabled first so that the local interrupt handlers do
+// not interleave with the request, which is retried until the controller
+// accepts it, as another cpu can have a transaction open at any moment;
+// no lock is taken, a preempted thread may be holding irqctrl_lock.
+// Retained through the linker garbage collection so that gdb can always
+// set the pc to it; "used" alone does not keep a section from being
+// garbage collected.
+__attribute__((noreturn, used, retain)) void _sysreset (void) {
+	__asm__ __volatile__ ("csrc mstatus, 0x8" ::: "memory");
+	hwdrvirqctrl_reset();
+}
+
 // Per CPU runqueue.
 static struct __runq {
 	uintptr_t lock;
