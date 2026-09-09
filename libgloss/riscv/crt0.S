@@ -83,9 +83,9 @@ _start:
   mv    a1, sp
   call  memcpy
 1:
-  # Init BSS.
+  # Init BSS up to __bss_end; .noinit follows it untouched, .persistent precedes __bss_start.
   la   a0, __bss_start
-  la   a2, _end
+  la   a2, __bss_end
   sub  a2, a2, a0
   li   a1, 0
   call memset
