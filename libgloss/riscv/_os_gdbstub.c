@@ -405,7 +405,7 @@ __asm__ (
 	".set GDBSTUB_LOADER_RXBUFSZ, " GDBSTUB_STR(GDBSTUB_LOADER_RXBUFSZ) "\n"
 	".set GDBSTUB_LOADER_MEMMAX, "  GDBSTUB_STR(GDBSTUB_LOADER_MEMMAX)  "\n"
 	".set GDBSTUB_LOADER_CODEMAX, " GDBSTUB_STR(GDBSTUB_LOADER_CODEMAX) "\n"
-	"/* gdbstub boot loader blob: position independent (norelax, in-blob pc-relative\n"
+	"/* gdbstub loader blob: position independent (norelax, in-blob pc-relative\n"
 	"   references only), copied below the stack by __gdbstub_boot() and entered with\n"
 	"   a0 = serial device data word, a1 = memory low bound, a2 = irqctrl address.\n"
 	"   Serves gdb's load into [membeg, region) and exits by the irqctrl reset on c/C. */\n"
