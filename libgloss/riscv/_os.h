@@ -255,22 +255,24 @@ register _thread_t *_thread_cur __asm__ ("tp");
 
 _date_t _clkcycles (void);
 
+// The local of these macros is in the reserved namespace so that
+// it cannot capture an argument mentioning a caller's variable.
 #define _SECS(D) ({ \
-	_date_t d = _clkfreq(); \
-	d = ((D)*d); /* Multiply by the 64bits local so it cannot overflow */ \
-	d; })
+	_date_t __d = _clkfreq(); \
+	__d = ((D)*__d); /* Multiply by the 64bits local so it cannot overflow */ \
+	__d; })
 #define _MSECS(D) ({ \
-	_date_t d = _clkfreq(); \
-	d = ((d >= 1000) ? ((D)*(d/1000)) : (((D)*d)/1000)); \
-	d; })
+	_date_t __d = _clkfreq(); \
+	__d = ((__d >= 1000) ? ((D)*(__d/1000)) : (((D)*__d)/1000)); \
+	__d; })
 #define _USECS(D) ({ \
-	_date_t d = _clkfreq(); \
-	d = ((d >= 1000000) ? ((D)*(d/1000000)) : (((D)*d)/1000000)); \
-	d; })
+	_date_t __d = _clkfreq(); \
+	__d = ((__d >= 1000000) ? ((D)*(__d/1000000)) : (((D)*__d)/1000000)); \
+	__d; })
 #define _NSECS(D) ({ \
-	_date_t d = _clkfreq(); \
-	d = ((d >= 1000000000) ? ((D)*(d/1000000000)) : (((D)*d)/1000000000)); \
-	d; })
+	_date_t __d = _clkfreq(); \
+	__d = ((__d >= 1000000000) ? ((D)*(__d/1000000000)) : (((D)*__d)/1000000000)); \
+	__d; })
 
 // Print diagnosis info and shutdown.
 #define _oops() ({ \
