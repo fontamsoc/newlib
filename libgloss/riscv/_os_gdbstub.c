@@ -1214,14 +1214,18 @@ static void gdbstub_regs_store (_savedctx_t *f) {
 // Return whether an OS structure pointer is safe to dereference: like
 // gdbstub_memok() but also accepting the boot carve-out right above
 // __heap_end, where the initial thread _thread_t (hence its wait-queue
-// and timer links, which other threads' links can point back to) lives.
+// and timer links, which other threads' links can point back to) lives:
+// crt0 carves it, then aligns sp down to 16 to make __heap_end, so it
+// lies within sizeof(_thread_t) + 16 bytes above __heap_end; the former
+// 1KB rounding of __heap_end fell short of it for __heap_end within
+// that distance below a 1KB boundary.
 static bool gdbstub_osptr_ok (uintptr_t p, uintptr_t len) {
 	if (p & 3)
 		return false;
 	if (gdbstub_memok(p, len))
 		return true;
 	extern uintptr_t __heap_end;
-	uintptr_t top = ((__heap_end + 1023) & ~(uintptr_t)1023);
+	uintptr_t top = (__heap_end + 16 + sizeof(_thread_t));
 	return (p >= __heap_end && p < top && len <= (top - p));
 }
 
