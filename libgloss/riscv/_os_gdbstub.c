@@ -212,9 +212,12 @@ static struct {
 	_thread_t *engine;     // The engine thread servicing gdb packets.
 	_thread_t *shell;      // The debug-shell thread.
 	_thread_t *mainthrd;   // The initial thread; its _thread_t lives above __heap_end.
-	char pkt_buf[1024];    // Packet buffer; qSupported reports (sizeof-8) as PacketSize.
-	char mem_buf[512];     // m/M packets data staging buffer.
 } gdbstub = {.signum = GDBSTUB_SIGTRAP};
+// The buffers live apart in .bss: the struct is initialized, hence in
+// .data, which the boot saves as a pristine copy at the RAM top, and
+// 1.5KB of buffers would otherwise be part of that copy.
+static char gdbstub_pkt_buf[1024]; // Packet buffer; qSupported reports (sizeof-8) as PacketSize.
+static char gdbstub_mem_buf[512];  // m/M packets data staging buffer.
 
 // Forward declarations for the few call cycles of this file.
 static int gdbstub_getc_wait (void);
@@ -1088,7 +1091,7 @@ static void gdbstub_send_signal (uintptr_t signum) {
 	gdbstub_send_packet(buf, sizeof(buf));
 }
 
-// Receive a packet of data in gdbstub.pkt_buf, acknowledging it;
+// Receive a packet of data in gdbstub_pkt_buf, acknowledging it;
 // a corrupted packet is negative-acknowledged and awaited again,
 // hence this only ever returns valid packets, of their data length.
 // The packet-start scan is where the engine thread idles, hence where
@@ -1119,8 +1122,8 @@ static unsigned gdbstub_recv_packet (void) {
 				overflow = false;
 				continue;
 			}
-			if (len < sizeof(gdbstub.pkt_buf))
-				gdbstub.pkt_buf[len++] = c;
+			if (len < sizeof(gdbstub_pkt_buf))
+				gdbstub_pkt_buf[len++] = c;
 			else
 				overflow = true;
 		}
@@ -1135,7 +1138,7 @@ static unsigned gdbstub_recv_packet (void) {
 		hex[1] = h1;
 		char expected;
 		if (!overflow && gdbstub_dec_hex(hex, 2, &expected, 1) == 0 &&
-			(unsigned char)expected == gdbstub_checksum(gdbstub.pkt_buf, len)) {
+			(unsigned char)expected == gdbstub_checksum(gdbstub_pkt_buf, len)) {
 			gdbstub_putc('+');
 			return len;
 		}
@@ -1143,11 +1146,11 @@ static unsigned gdbstub_recv_packet (void) {
 	}
 }
 
-// Return whether the packet in gdbstub.pkt_buf begins with the string given as argument.
+// Return whether the packet in gdbstub_pkt_buf begins with the string given as argument.
 static bool gdbstub_pkt_is (unsigned pkt_len, char *s) {
 	unsigned i = 0;
 	while (s[i]) {
-		if (i >= pkt_len || gdbstub.pkt_buf[i] != s[i])
+		if (i >= pkt_len || gdbstub_pkt_buf[i] != s[i])
 			return false;
 		i += 1;
 	}
@@ -1962,29 +1965,29 @@ static void gdbstub_reply_regs (void) {
 	unsigned pos = 0;
 	for (unsigned i = 0; i < 33; ++i) {
 		if (gdbstub.avail & ((uint64_t)1 << i)) {
-			gdbstub_enc_hex((gdbstub.pkt_buf + pos),
-				(sizeof(gdbstub.pkt_buf) - pos),
+			gdbstub_enc_hex((gdbstub_pkt_buf + pos),
+				(sizeof(gdbstub_pkt_buf) - pos),
 				(char *)&gdbstub.regs[i], sizeof(gdbstub.regs[i]));
 		} else {
 			for (unsigned k = 0; k < (2*sizeof(uintptr_t)); ++k)
-				gdbstub.pkt_buf[pos+k] = 'x';
+				gdbstub_pkt_buf[pos+k] = 'x';
 		}
 		pos += (2*sizeof(uintptr_t));
 	}
-	gdbstub_send_packet(gdbstub.pkt_buf, pos);
+	gdbstub_send_packet(gdbstub_pkt_buf, pos);
 }
 
-// Service one gdb packet from gdbstub.pkt_buf; the engine thread loops
+// Service one gdb packet from gdbstub_pkt_buf; the engine thread loops
 // on this. The c/s packets only flag the resumption (gdbstub.resumed):
 // the stop-reply they expect is later sent by gdbstub_event_pump().
 static void gdbstub_dispatch (unsigned pkt_len) {
 
-	char *ptr = (gdbstub.pkt_buf + 1);
-	char *end = (gdbstub.pkt_buf + pkt_len);
+	char *ptr = (gdbstub_pkt_buf + 1);
+	char *end = (gdbstub_pkt_buf + pkt_len);
 	uintptr_t addr, length;
 	int status;
 
-	switch (gdbstub.pkt_buf[0]) {
+	switch (gdbstub_pkt_buf[0]) {
 
 	// Read all registers.
 	case 'g':
@@ -2012,13 +2015,13 @@ static void gdbstub_dispatch (unsigned pkt_len) {
 		gdbstub_ctx_load(__gdbstub_tp);
 		if (gdbstub.avail & ((uint64_t)1 << addr)) {
 			status = gdbstub_enc_hex(
-				gdbstub.pkt_buf, sizeof(gdbstub.pkt_buf),
+				gdbstub_pkt_buf, sizeof(gdbstub_pkt_buf),
 				(char *)&gdbstub.regs[addr], sizeof(gdbstub.regs[addr]));
-			gdbstub_send_packet(gdbstub.pkt_buf, status);
+			gdbstub_send_packet(gdbstub_pkt_buf, status);
 		} else {
 			for (unsigned k = 0; k < (2*sizeof(uintptr_t)); ++k)
-				gdbstub.pkt_buf[k] = 'x';
-			gdbstub_send_packet(gdbstub.pkt_buf, (2*sizeof(uintptr_t)));
+				gdbstub_pkt_buf[k] = 'x';
+			gdbstub_send_packet(gdbstub_pkt_buf, (2*sizeof(uintptr_t)));
 		}
 		break;
 
@@ -2050,18 +2053,18 @@ static void gdbstub_dispatch (unsigned pkt_len) {
 			goto error;
 		if (!gdbstub_parsehex(&ptr, end, &length))
 			goto error;
-		if (length > sizeof(gdbstub.mem_buf))
-			length = sizeof(gdbstub.mem_buf); // A truncated reply is valid.
+		if (length > sizeof(gdbstub_mem_buf))
+			length = sizeof(gdbstub_mem_buf); // A truncated reply is valid.
 		if (!gdbstub_memok(addr, length))
 			goto error;
 		for (uintptr_t i = 0; i < length; ++i)
-			gdbstub.mem_buf[i] = *(volatile char *)(addr + i);
+			gdbstub_mem_buf[i] = *(volatile char *)(addr + i);
 		status = gdbstub_enc_hex(
-			gdbstub.pkt_buf, sizeof(gdbstub.pkt_buf),
-			gdbstub.mem_buf, length);
+			gdbstub_pkt_buf, sizeof(gdbstub_pkt_buf),
+			gdbstub_mem_buf, length);
 		if (status == -1)
 			goto error;
-		gdbstub_send_packet(gdbstub.pkt_buf, status);
+		gdbstub_send_packet(gdbstub_pkt_buf, status);
 		break;
 
 	// Write memory; used by gdb to plant its breakpoints,
@@ -2079,16 +2082,16 @@ static void gdbstub_dispatch (unsigned pkt_len) {
 			goto error;
 		if (ptr >= end || *ptr++ != ':')
 			goto error;
-		if (length > sizeof(gdbstub.mem_buf) || !gdbstub_memok(addr, length) ||
+		if (length > sizeof(gdbstub_mem_buf) || !gdbstub_memok(addr, length) ||
 			gdbstub_entry_covered(addr, length))
 			goto error;
 		status = gdbstub_dec_hex(ptr, (end - ptr),
-			gdbstub.mem_buf, length);
+			gdbstub_mem_buf, length);
 		if (status)
 			goto error;
 		_preempt_disable();
 		for (uintptr_t i = 0; i < length; ++i)
-			*(volatile char *)(addr + i) = gdbstub.mem_buf[i];
+			*(volatile char *)(addr + i) = gdbstub_mem_buf[i];
 		gdbstub_memsync(addr, length);
 		gdbstub_fencei();
 		_preempt_enable();
@@ -2314,19 +2317,19 @@ static void gdbstub_emergency (uintptr_t signum) {
 			continue;
 		}
 
-		char *ptr = (gdbstub.pkt_buf + 1);
-		char *end = (gdbstub.pkt_buf + pkt_len);
+		char *ptr = (gdbstub_pkt_buf + 1);
+		char *end = (gdbstub_pkt_buf + pkt_len);
 		uintptr_t addr, length;
 		int status;
 
-		switch (gdbstub.pkt_buf[0]) {
+		switch (gdbstub_pkt_buf[0]) {
 
 		// Read all registers.
 		case 'g':
 			status = gdbstub_enc_hex(
-				gdbstub.pkt_buf, sizeof(gdbstub.pkt_buf),
+				gdbstub_pkt_buf, sizeof(gdbstub_pkt_buf),
 				(char *)gdbstub.regs, sizeof(gdbstub.regs));
-			gdbstub_send_packet(gdbstub.pkt_buf, status);
+			gdbstub_send_packet(gdbstub_pkt_buf, status);
 			break;
 
 		// Write all registers.
@@ -2346,9 +2349,9 @@ static void gdbstub_emergency (uintptr_t signum) {
 			if (addr >= 33)
 				goto error;
 			status = gdbstub_enc_hex(
-				gdbstub.pkt_buf, sizeof(gdbstub.pkt_buf),
+				gdbstub_pkt_buf, sizeof(gdbstub_pkt_buf),
 				(char *)&gdbstub.regs[addr], sizeof(gdbstub.regs[addr]));
-			gdbstub_send_packet(gdbstub.pkt_buf, status);
+			gdbstub_send_packet(gdbstub_pkt_buf, status);
 			break;
 
 		// Write a register.
@@ -2376,18 +2379,18 @@ static void gdbstub_emergency (uintptr_t signum) {
 				goto error;
 			if (!gdbstub_parsehex(&ptr, end, &length))
 				goto error;
-			if (length > sizeof(gdbstub.mem_buf))
-				length = sizeof(gdbstub.mem_buf); // A truncated reply is valid.
+			if (length > sizeof(gdbstub_mem_buf))
+				length = sizeof(gdbstub_mem_buf); // A truncated reply is valid.
 			if (!gdbstub_memok(addr, length))
 				goto error;
 			for (uintptr_t i = 0; i < length; ++i)
-				gdbstub.mem_buf[i] = *(volatile char *)(addr + i);
+				gdbstub_mem_buf[i] = *(volatile char *)(addr + i);
 			status = gdbstub_enc_hex(
-				gdbstub.pkt_buf, sizeof(gdbstub.pkt_buf),
-				gdbstub.mem_buf, length);
+				gdbstub_pkt_buf, sizeof(gdbstub_pkt_buf),
+				gdbstub_mem_buf, length);
 			if (status == -1)
 				goto error;
-			gdbstub_send_packet(gdbstub.pkt_buf, status);
+			gdbstub_send_packet(gdbstub_pkt_buf, status);
 			break;
 
 		// Write memory; used by gdb to plant its breakpoints,
@@ -2401,15 +2404,15 @@ static void gdbstub_emergency (uintptr_t signum) {
 				goto error;
 			if (ptr >= end || *ptr++ != ':')
 				goto error;
-			if (length > sizeof(gdbstub.mem_buf) || !gdbstub_memok(addr, length) ||
+			if (length > sizeof(gdbstub_mem_buf) || !gdbstub_memok(addr, length) ||
 				gdbstub_entry_covered(addr, length))
 				goto error;
 			status = gdbstub_dec_hex(ptr, (end - ptr),
-				gdbstub.mem_buf, length);
+				gdbstub_mem_buf, length);
 			if (status)
 				goto error;
 			for (uintptr_t i = 0; i < length; ++i)
-				*(volatile char *)(addr + i) = gdbstub.mem_buf[i];
+				*(volatile char *)(addr + i) = gdbstub_mem_buf[i];
 			gdbstub_memsync(addr, length);
 			gdbstub_fencei();
 			gdbstub_send_str("OK");
