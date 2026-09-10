@@ -66,12 +66,21 @@
 // fence.i only invalidates the icache, each modified word is pushed to
 // the memory-side coherency point using an atomic access (which bypasses
 // the dcache) so that the icache refill observes it; see gdbstub_memsync().
+//
+// A running image can be replaced from gdb: the stub cannot serve a load
+// over itself, so a reload flag in .persistent (__gdbstub_reload, set from
+// gdb or by the application, then a reset: the reload command of the
+// tools/underLineOS.gdb script resumes into _sysreset()) makes the boot
+// hook __gdbstub_boot() park the next boot in a small position independent
+// loader copied below the stack, which serves gdb's load and starts the
+// loaded image by another reset; see the program reload section below.
 
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
 
 #include "_os.h"
+#include "_os_params.h"
 
 #include <machine/hwdrvchar.h>
 #include <machine/hwdrvirqctrl.h>
@@ -353,6 +362,563 @@ static void gdbstub_bounds_init (void) {
 		extern uintptr_t __heap_end;
 		gdbstub.memend = ((__heap_end + 1023) & ~(uintptr_t)1023);
 	}
+}
+
+// ****************************************************************************
+// Program reload: a boot-time relocated loader serving gdb's load
+// ****************************************************************************
+
+// Set to non-null, then reset with the button or _sysreset(): the boot hook
+// below then parks in the loader, which serves gdb's load and starts the
+// loaded image by another reset. It lives in .persistent: outside both crt0
+// windows (the .data restore and the .bss clear), a load writes the loaded
+// image's null over it. Written with _xchg(): a reset discards the dirty
+// words of the write-back dcache, which is also what gdb's set var does
+// through the M packet. Any non-null value is a request, so that a wild
+// write landing here parks the next warm boot in the loader, which says so
+// on the console: a benign, self-explaining state, and the recovery path.
+uintptr_t __gdbstub_reload __attribute__((section(".persistent"))) = 0;
+
+// The loader region, carved below the live stack pointer by the boot hook:
+// code and strings, then the packet receive buffer, then its stack.
+#define GDBSTUB_LOADER_SIZE    3584
+#define GDBSTUB_LOADER_RXBUF   0x800 // Receive buffer offset in the region.
+#define GDBSTUB_LOADER_RXBUFSZ 1024
+#define GDBSTUB_LOADER_MEMMAX  512   // Bytes per m/M packet, as the stub's mem_buf.
+#define GDBSTUB_LOADER_CODEMAX 1664  // The build fails above it (a .org guard); raise it
+                                     // up to GDBSTUB_LOADER_RXBUF when the loader grows.
+#define GDBSTUB_STR_(x) #x
+#define GDBSTUB_STR(x) GDBSTUB_STR_(x)
+_Static_assert(__riscv_xlen == 32, "the gdbstub loader is rv32 only");
+extern const char __gdbstub_loader_start[], __gdbstub_loader_end[];
+
+// The loader is position independent by construction: norelax, in-blob
+// pc-relative references only, no la/call/tail to anything outside, no gp,
+// no tp, no libgcc; a single top-level asm statement keeps it in one piece.
+// GCC accepts a top-level asm statement; this file has no other one.
+__asm__ (
+	".set GDBSTUB_LOADER_SIZE, "    GDBSTUB_STR(GDBSTUB_LOADER_SIZE)    "\n"
+	".set GDBSTUB_LOADER_RXBUF, "   GDBSTUB_STR(GDBSTUB_LOADER_RXBUF)   "\n"
+	".set GDBSTUB_LOADER_RXBUFSZ, " GDBSTUB_STR(GDBSTUB_LOADER_RXBUFSZ) "\n"
+	".set GDBSTUB_LOADER_MEMMAX, "  GDBSTUB_STR(GDBSTUB_LOADER_MEMMAX)  "\n"
+	".set GDBSTUB_LOADER_CODEMAX, " GDBSTUB_STR(GDBSTUB_LOADER_CODEMAX) "\n"
+	"/* gdbstub boot loader blob: position independent (norelax, in-blob pc-relative\n"
+	"   references only), copied below the stack by __gdbstub_boot() and entered with\n"
+	"   a0 = serial device data word, a1 = memory low bound, a2 = irqctrl address.\n"
+	"   Serves gdb's load into [membeg, region) and exits by the irqctrl reset on c/C. */\n"
+	"	.pushsection .text.__gdbstub_loader,\"ax\",@progbits\n"
+	"	.option push\n"
+	"	.option norelax\n"
+	"	.balign 4\n"
+	"	.global __gdbstub_loader_start\n"
+	"__gdbstub_loader_start:\n"
+	".Lloader_start:\n"
+	"	/* s0 dev, s1 membeg, s2 irqctrl, s3 region, s5 reported pc, s7 rxbuf, s8 len,\n"
+	"	   s9 reply checksum, s10 signum; s11, s6 and s4 hold the return addresses of\n"
+	"	   the helpers nested one, two and three levels above the leaves. */\n"
+	"	auipc	s3, 0\n"
+	"	mv	s0, a0\n"
+	"	mv	s1, a1\n"
+	"	mv	s2, a2\n"
+	"	li	t0, GDBSTUB_LOADER_SIZE\n"
+	"	add	sp, s3, t0\n"
+	"	li	t0, GDBSTUB_LOADER_RXBUF\n"
+	"	add	s7, s3, t0\n"
+	"	mv	s5, s3\n"
+	"	li	s10, 5\n"
+	"	lla	t0, park\n"
+	"	csrw	mtvec, t0\n"
+	"	j	mainloop\n"
+	"park:	/* trap inside the loader: halt as the crt0 oops does */\n"
+	"	csrw	mtvec, x0\n"
+	"	ebreak\n"
+	"1:	j	1b\n"
+	"\n"
+	"	/* ---- packet reader ---- */\n"
+	"mainloop:\n"
+	"	jal	ra, getc\n"
+	"	li	t0, 0x03\n"
+	"	beq	a0, t0, ctrlc\n"
+	"	li	t0, '$'\n"
+	"	bne	a0, t0, mainloop\n"
+	"readbody:\n"
+	"	li	s8, 0\n"
+	"	li	t2, 0\n"
+	"bodyloop:\n"
+	"	jal	ra, getc\n"
+	"	li	t0, '#'\n"
+	"	beq	a0, t0, bodyend\n"
+	"	li	t0, '$'\n"
+	"	beq	a0, t0, readbody\n"
+	"	li	t0, GDBSTUB_LOADER_RXBUFSZ\n"
+	"	bge	s8, t0, badcsum\n"
+	"	add	t3, s7, s8\n"
+	"	sb	a0, 0(t3)\n"
+	"	add	t2, t2, a0\n"
+	"	addi	s8, s8, 1\n"
+	"	j	bodyloop\n"
+	"bodyend:\n"
+	"	andi	t2, t2, 0xff\n"
+	"	jal	ra, getc\n"
+	"	jal	ra, hexval\n"
+	"	slli	t4, a0, 4\n"
+	"	jal	ra, getc\n"
+	"	jal	ra, hexval\n"
+	"	or	t4, t4, a0\n"
+	"	bne	t2, t4, badcsum\n"
+	"	li	a0, '+'\n"
+	"	jal	ra, putc\n"
+	"	j	dispatch\n"
+	"badcsum:\n"
+	"	li	a0, '-'\n"
+	"	jal	ra, putc\n"
+	"	j	mainloop\n"
+	"ctrlc:\n"
+	"	li	s10, 2\n"
+	"	j	reply_signal\n"
+	"\n"
+	"	/* ---- dispatch on the first body byte ---- */\n"
+	"dispatch:\n"
+	"	beqz	s8, reply_empty\n"
+	"	lbu	t0, 0(s7)\n"
+	"	li	t1, '?'\n"
+	"	beq	t0, t1, reply_signal\n"
+	"	li	t1, 'q'\n"
+	"	beq	t0, t1, pkt_q\n"
+	"	li	t1, 'g'\n"
+	"	beq	t0, t1, pkt_g\n"
+	"	li	t1, 'p'\n"
+	"	beq	t0, t1, pkt_p\n"
+	"	li	t1, 'P'\n"
+	"	beq	t0, t1, pkt_P\n"
+	"	li	t1, 'm'\n"
+	"	beq	t0, t1, pkt_m\n"
+	"	li	t1, 'M'\n"
+	"	beq	t0, t1, pkt_M\n"
+	"	li	t1, 'c'\n"
+	"	beq	t0, t1, pkt_c\n"
+	"	li	t1, 'C'\n"
+	"	beq	t0, t1, pkt_c\n"
+	"	li	t1, 's'\n"
+	"	beq	t0, t1, reply_s05\n"
+	"	li	t1, 'S'\n"
+	"	beq	t0, t1, reply_s05\n"
+	"	li	t1, 'D'\n"
+	"	beq	t0, t1, reply_ok\n"
+	"	li	t1, 'k'\n"
+	"	beq	t0, t1, mainloop	/* acked, no reply body */\n"
+	"reply_empty:\n"
+	"	jal	ra, send_begin\n"
+	"	j	reply_end\n"
+	"reply_ok:\n"
+	"	jal	ra, send_begin\n"
+	"	lla	a0, str_ok\n"
+	"	jal	ra, send_str\n"
+	"	j	reply_end\n"
+	"reply_e14:\n"
+	"	jal	ra, send_begin\n"
+	"	lla	a0, str_e14\n"
+	"	jal	ra, send_str\n"
+	"	j	reply_end\n"
+	"reply_s05:\n"
+	"	jal	ra, send_begin\n"
+	"	li	a0, 'S'\n"
+	"	jal	ra, send_ch\n"
+	"	li	a0, 5\n"
+	"	jal	ra, send_hexbyte\n"
+	"	j	reply_end\n"
+	"reply_signal:	/* ? and ^C: S<signum> */\n"
+	"	jal	ra, send_begin\n"
+	"	li	a0, 'S'\n"
+	"	jal	ra, send_ch\n"
+	"	mv	a0, s10\n"
+	"	jal	ra, send_hexbyte\n"
+	"	j	reply_end\n"
+	"reply_end:	/* a0 = 1 when gdb nacked: re-dispatch the untouched packet */\n"
+	"	jal	ra, send_end\n"
+	"	bnez	a0, dispatch\n"
+	"	j	mainloop\n"
+	"\n"
+	"pkt_q:	/* only qSupported is answered */\n"
+	"	lla	a1, str_qsupported\n"
+	"	jal	ra, strpfx\n"
+	"	beqz	a0, reply_empty\n"
+	"	jal	ra, send_begin\n"
+	"	lla	a0, str_packetsize\n"
+	"	jal	ra, send_str\n"
+	"	j	reply_end\n"
+	"\n"
+	"pkt_g:	/* 32 unavailable registers, then the pc */\n"
+	"	jal	ra, send_begin\n"
+	"	li	t5, 32\n"
+	"1:	lla	a0, str_xxxx\n"
+	"	jal	ra, send_str\n"
+	"	addi	t5, t5, -1\n"
+	"	bnez	t5, 1b\n"
+	"	mv	a0, s5\n"
+	"	jal	ra, send_word\n"
+	"	j	reply_end\n"
+	"\n"
+	"pkt_p:	/* p n: 32 is the pc, below unavailable, above an error */\n"
+	"	addi	a1, s7, 1\n"
+	"	add	a2, s7, s8\n"
+	"	jal	ra, parsehex\n"
+	"	beqz	a3, reply_e14\n"
+	"	li	t0, 32\n"
+	"	bltu	t0, a0, reply_e14\n"
+	"	beq	a0, t0, 1f\n"
+	"	jal	ra, send_begin\n"
+	"	lla	a0, str_xxxx\n"
+	"	jal	ra, send_str\n"
+	"	j	reply_end\n"
+	"1:	jal	ra, send_begin\n"
+	"	mv	a0, s5\n"
+	"	jal	ra, send_word\n"
+	"	j	reply_end\n"
+	"\n"
+	"pkt_P:	/* P n=v: records v as the pc when n is 32; accepted otherwise */\n"
+	"	addi	a1, s7, 1\n"
+	"	add	a2, s7, s8\n"
+	"	jal	ra, parsehex\n"
+	"	beqz	a3, reply_e14\n"
+	"	mv	t5, a0\n"
+	"	lbu	t0, 0(a1)\n"
+	"	li	t1, '='\n"
+	"	bne	t0, t1, reply_e14\n"
+	"	addi	a1, a1, 1\n"
+	"	jal	ra, parseword\n"
+	"	beqz	a3, reply_e14\n"
+	"	li	t0, 32\n"
+	"	bne	t5, t0, reply_ok\n"
+	"	mv	s5, a0\n"
+	"	j	reply_ok\n"
+	"\n"
+	"pkt_m:	/* m addr,len: hex dump of [addr, addr+len) within [membeg, region) */\n"
+	"	addi	a1, s7, 1\n"
+	"	add	a2, s7, s8\n"
+	"	jal	ra, parsehex\n"
+	"	beqz	a3, reply_e14\n"
+	"	mv	t5, a0\n"
+	"	lbu	t0, 0(a1)\n"
+	"	li	t1, ','\n"
+	"	bne	t0, t1, reply_e14\n"
+	"	addi	a1, a1, 1\n"
+	"	jal	ra, parsehex\n"
+	"	beqz	a3, reply_e14\n"
+	"	li	t0, GDBSTUB_LOADER_MEMMAX\n"
+	"	bltu	a0, t0, 1f\n"
+	"	mv	a0, t0\n"
+	"1:	mv	t6, a0\n"
+	"	mv	a0, t5\n"
+	"	mv	a1, t6\n"
+	"	jal	ra, memok\n"
+	"	beqz	a0, reply_e14\n"
+	"	jal	ra, send_begin\n"
+	"2:	beqz	t6, reply_end\n"
+	"	lbu	a0, 0(t5)\n"
+	"	jal	ra, send_hexbyte\n"
+	"	addi	t5, t5, 1\n"
+	"	addi	t6, t6, -1\n"
+	"	j	2b\n"
+	"\n"
+	"pkt_M:	/* M addr,len:hex: validated first, then written, pushed to memory, fence.i */\n"
+	"	addi	a1, s7, 1\n"
+	"	add	a2, s7, s8\n"
+	"	jal	ra, parsehex\n"
+	"	beqz	a3, reply_e14\n"
+	"	mv	t5, a0\n"
+	"	lbu	t0, 0(a1)\n"
+	"	li	t1, ','\n"
+	"	bne	t0, t1, reply_e14\n"
+	"	addi	a1, a1, 1\n"
+	"	jal	ra, parsehex\n"
+	"	beqz	a3, reply_e14\n"
+	"	mv	t6, a0\n"
+	"	li	t0, GDBSTUB_LOADER_MEMMAX\n"
+	"	bltu	t0, t6, reply_e14\n"
+	"	lbu	t0, 0(a1)\n"
+	"	li	t1, ':'\n"
+	"	bne	t0, t1, reply_e14\n"
+	"	addi	a1, a1, 1\n"
+	"	mv	a0, t5\n"
+	"	mv	a3, a1\n"
+	"	mv	a1, t6\n"
+	"	jal	ra, memok\n"
+	"	beqz	a0, reply_e14\n"
+	"	/* pass 1: exactly 2*len hex digits must remain */\n"
+	"	sub	t0, a2, a3\n"
+	"	slli	t1, t6, 1\n"
+	"	bne	t0, t1, reply_e14\n"
+	"	mv	t3, a3\n"
+	"1:	beq	t3, a2, 2f\n"
+	"	lbu	a0, 0(t3)\n"
+	"	jal	ra, hexval\n"
+	"	bltz	a0, reply_e14\n"
+	"	addi	t3, t3, 1\n"
+	"	j	1b\n"
+	"	/* pass 2: byte stores */\n"
+	"2:	mv	t3, a3\n"
+	"	mv	t4, t5\n"
+	"3:	beq	t3, a2, 4f\n"
+	"	lbu	a0, 0(t3)\n"
+	"	jal	ra, hexval\n"
+	"	slli	t2, a0, 4\n"
+	"	lbu	a0, 1(t3)\n"
+	"	jal	ra, hexval\n"
+	"	or	a0, a0, t2\n"
+	"	sb	a0, 0(t4)\n"
+	"	addi	t3, t3, 2\n"
+	"	addi	t4, t4, 1\n"
+	"	j	3b\n"
+	"	/* push the dcache view of each word to memory, then invalidate the icache */\n"
+	"4:	andi	t3, t5, -4\n"
+	"	add	t4, t5, t6\n"
+	"5:	bgeu	t3, t4, 6f\n"
+	"	lw	t0, 0(t3)\n"
+	"	amoswap.w.aqrl	x0, t0, (t3)\n"
+	"	addi	t3, t3, 4\n"
+	"	j	5b\n"
+	"6:	fence.i\n"
+	"	j	reply_ok\n"
+	"\n"
+	"pkt_c:	/* c/C: request the system reset through the irqctrl, then park */\n"
+	"	fence\n"
+	"	li	t0, -6		/* CMDINTDST targeting the destination -1 */\n"
+	"1:	amoswap.w.aqrl	x0, zero, (s2)	/* CMDDEVRDY closes any open transaction */\n"
+	"	amoswap.w.aqrl	t1, t0, (s2)\n"
+	"	andi	t1, t1, 3	/* accepted only when the old word's cmd field is null */\n"
+	"	bnez	t1, 1b\n"
+	"2:	wfi\n"
+	"	j	2b\n"
+	"\n"
+	"	/* ---- helpers; the leaves clobber a0/t0 only, the others also t2/t3/t4 ---- */\n"
+	"getc:	/* blocks until a byte is available */\n"
+	"	lbu	a0, 0(s0)\n"
+	"	ret\n"
+	"putc:\n"
+	"	sb	a0, 0(s0)\n"
+	"	ret\n"
+	"hexval:	/* a0 = hex digit value of the character in a0, or -1 */\n"
+	"	li	t0, '0'\n"
+	"	blt	a0, t0, 9f\n"
+	"	li	t0, '9'\n"
+	"	bgt	a0, t0, 1f\n"
+	"	addi	a0, a0, -'0'\n"
+	"	ret\n"
+	"1:	ori	a0, a0, 0x20	/* lower case */\n"
+	"	li	t0, 'a'\n"
+	"	blt	a0, t0, 9f\n"
+	"	li	t0, 'f'\n"
+	"	bgt	a0, t0, 9f\n"
+	"	addi	a0, a0, -'a'+10\n"
+	"	ret\n"
+	"9:	li	a0, -1\n"
+	"	ret\n"
+	"parsehex:	/* level 1: a1 = cursor, a2 = end; returns a0 = value, a1 = cursor past the digits, a3 = digit count */\n"
+	"	mv	s11, ra\n"
+	"	li	t2, 0\n"
+	"	li	a3, 0\n"
+	"1:	bgeu	a1, a2, 2f\n"
+	"	lbu	a0, 0(a1)\n"
+	"	jal	ra, hexval\n"
+	"	bltz	a0, 2f\n"
+	"	slli	t2, t2, 4\n"
+	"	or	t2, t2, a0\n"
+	"	addi	a1, a1, 1\n"
+	"	addi	a3, a3, 1\n"
+	"	j	1b\n"
+	"2:	mv	a0, t2\n"
+	"	jr	s11\n"
+	"parseword:	/* level 1: eight hex digits as little-endian bytes: a0 = value, a1 past them, a3 = 0 on error */\n"
+	"	mv	s11, ra\n"
+	"	li	t3, 0		/* value */\n"
+	"	li	t4, 0		/* byte index */\n"
+	"1:	li	t0, 4\n"
+	"	beq	t4, t0, 2f\n"
+	"	addi	t0, a1, 2\n"
+	"	bltu	a2, t0, 9f\n"
+	"	lbu	a0, 0(a1)\n"
+	"	jal	ra, hexval\n"
+	"	bltz	a0, 9f\n"
+	"	slli	t2, a0, 4\n"
+	"	lbu	a0, 1(a1)\n"
+	"	jal	ra, hexval\n"
+	"	bltz	a0, 9f\n"
+	"	or	a0, a0, t2\n"
+	"	slli	t0, t4, 3\n"
+	"	sll	a0, a0, t0\n"
+	"	or	t3, t3, a0\n"
+	"	addi	a1, a1, 2\n"
+	"	addi	t4, t4, 1\n"
+	"	j	1b\n"
+	"2:	mv	a0, t3\n"
+	"	li	a3, 1\n"
+	"	jr	s11\n"
+	"9:	li	a3, 0\n"
+	"	jr	s11\n"
+	"memok:	/* a0 = addr, a1 = len: a0 = 1 when [addr, addr+len) lies within [membeg, region) */\n"
+	"	bltu	a0, s1, 9f\n"
+	"	add	t0, a0, a1\n"
+	"	bltu	t0, a0, 9f\n"
+	"	bltu	s3, t0, 9f\n"
+	"	li	a0, 1\n"
+	"	ret\n"
+	"9:	li	a0, 0\n"
+	"	ret\n"
+	"strpfx:	/* level 1: a1 = literal: a0 = 1 when the packet body starts with it */\n"
+	"	mv	s11, ra\n"
+	"	mv	t2, s7\n"
+	"	add	t3, s7, s8\n"
+	"1:	lbu	t0, 0(a1)\n"
+	"	beqz	t0, 2f\n"
+	"	bgeu	t2, t3, 9f\n"
+	"	lbu	t1, 0(t2)\n"
+	"	bne	t0, t1, 9f\n"
+	"	addi	a1, a1, 1\n"
+	"	addi	t2, t2, 1\n"
+	"	j	1b\n"
+	"2:	li	a0, 1\n"
+	"	jr	s11\n"
+	"9:	li	a0, 0\n"
+	"	jr	s11\n"
+	"send_begin:	/* leaf */\n"
+	"	li	a0, '$'\n"
+	"	sb	a0, 0(s0)\n"
+	"	li	s9, 0\n"
+	"	ret\n"
+	"send_ch:	/* leaf: one reply character, checksummed */\n"
+	"	add	s9, s9, a0\n"
+	"	sb	a0, 0(s0)\n"
+	"	ret\n"
+	"send_str:	/* level 1 */\n"
+	"	mv	s11, ra\n"
+	"	mv	t2, a0\n"
+	"1:	lbu	a0, 0(t2)\n"
+	"	beqz	a0, 2f\n"
+	"	jal	ra, send_ch\n"
+	"	addi	t2, t2, 1\n"
+	"	j	1b\n"
+	"2:	jr	s11\n"
+	"send_hexbyte:	/* level 2: a0 = byte as two lower-case hex digits */\n"
+	"	mv	s6, ra\n"
+	"	mv	t2, a0\n"
+	"	srli	a0, a0, 4\n"
+	"	jal	ra, send_nibble\n"
+	"	andi	a0, t2, 0xf\n"
+	"	jal	ra, send_nibble\n"
+	"	jr	s6\n"
+	"send_nibble:	/* level 1: a0 = 0..15 */\n"
+	"	mv	s11, ra\n"
+	"	li	t0, 10\n"
+	"	blt	a0, t0, 1f\n"
+	"	addi	a0, a0, 'a'-10\n"
+	"	j	2f\n"
+	"1:	addi	a0, a0, '0'\n"
+	"2:	jal	ra, send_ch\n"
+	"	jr	s11\n"
+	"send_word:	/* level 3: a0 = word as eight hex digits, little-endian bytes */\n"
+	"	mv	s4, ra\n"
+	"	mv	t5, a0\n"
+	"	li	t6, 4\n"
+	"1:	andi	a0, t5, 0xff\n"
+	"	jal	ra, send_hexbyte\n"
+	"	srli	t5, t5, 8\n"
+	"	addi	t6, t6, -1\n"
+	"	bnez	t6, 1b\n"
+	"	jr	s4\n"
+	"send_end:	/* level 1: '#', the checksum, then wait for the ack: a0 = 0 on '+', 1 on '-' */\n"
+	"	mv	s11, ra\n"
+	"	li	a0, '#'\n"
+	"	jal	ra, putc\n"
+	"	andi	t2, s9, 0xff\n"
+	"	srli	a0, t2, 4\n"
+	"	jal	ra, hexchar\n"
+	"	jal	ra, putc\n"
+	"	andi	a0, t2, 0xf\n"
+	"	jal	ra, hexchar\n"
+	"	jal	ra, putc\n"
+	"1:	jal	ra, getc\n"
+	"	li	t0, '+'\n"
+	"	beq	a0, t0, 2f\n"
+	"	li	t0, '-'\n"
+	"	bne	a0, t0, 1b\n"
+	"	li	a0, 1\n"
+	"	jr	s11\n"
+	"2:	li	a0, 0\n"
+	"	jr	s11\n"
+	"hexchar:	/* a0 = 0..15 to its character */\n"
+	"	li	t0, 10\n"
+	"	blt	a0, t0, 1f\n"
+	"	addi	a0, a0, 'a'-10\n"
+	"	ret\n"
+	"1:	addi	a0, a0, '0'\n"
+	"	ret\n"
+	"\n"
+	"str_qsupported:	.asciz \"qSupported\"\n"
+	"str_packetsize:	.asciz \"PacketSize=3f8\"\n"
+	"str_ok:		.asciz \"OK\"\n"
+	"str_e14:	.asciz \"E14\"\n"
+	"str_xxxx:	.asciz \"xxxxxxxx\"\n"
+	"	.balign 4\n"
+	"	.global __gdbstub_loader_end\n"
+	"__gdbstub_loader_end:\n"
+	"	/* size guard: .org cannot move backwards, the build fails when the blob exceeds GDBSTUB_LOADER_CODEMAX */\n"
+	"	.org .Lloader_start + GDBSTUB_LOADER_CODEMAX\n"
+	"	.option pop\n"
+	"	.popsection\n"
+);
+
+// Raw console line, the crt0 oops idiom (byte stores to SERIAL0_ADDR, which
+// work from reset); silent when the console is the gdb channel itself.
+static void gdbstub_boot_puts (const char *s) {
+	volatile unsigned char *con = (volatile unsigned char *)SERIAL0_ADDR;
+	if ((void *)con == gdbstub_devaddr())
+		return;
+	while (*s)
+		*con = *s++;
+}
+
+// Return whether [addr, addr+len) covers _start: a load from the running
+// stub, which would overwrite the stub itself, is refused on its first
+// packet; the loader is the one to serve a load.
+static bool gdbstub_entry_covered (uintptr_t addr, uintptr_t len) {
+	extern char _start[];
+	return (addr <= (uintptr_t)_start && (addr + len) > (uintptr_t)_start);
+}
+
+// Boot hook, called by _start() once .data is saved or restored and before
+// .bss gets cleared, with tp not yet set: nothing here may reference
+// _thread_cur (it is tp), hence no _preempt_*, _thread_*, scheduler or IRQ
+// helper, no _ncpu() (.bss is not cleared) and no __heap_* (.data is
+// pristine); the room is checked against _end instead. When a reload is
+// pending, the loader is copied below the live stack pointer and entered;
+// it never returns, the loaded image starting by a reset.
+void __gdbstub_boot (void) {
+	if (!__gdbstub_reload)
+		return;
+	(void)_xchg(&__gdbstub_reload, 0);
+	// Load transients over this word must start from zero, see the rendezvous
+	// derivation at RENDEZVOUS_MAGIC: a stale value would hold the magic's
+	// upper bytes, which a partial write could complete into a hart's target.
+	__ncpu_rendezvous = 0;
+	uintptr_t sp;
+	__asm__ __volatile__ ("mv %0, sp" : "=r"(sp));
+	uintptr_t region = ((sp - GDBSTUB_LOADER_SIZE) & ~(uintptr_t)15);
+	uintptr_t blobsz = (__gdbstub_loader_end - __gdbstub_loader_start);
+	extern char _end[];
+	if (region < (uintptr_t)_end || blobsz < 256 || blobsz > GDBSTUB_LOADER_CODEMAX) {
+		gdbstub_boot_puts("gdbstub: no room for the loader, booting\n");
+		return;
+	}
+	const uintptr_t *src = (const uintptr_t *)__gdbstub_loader_start;
+	uintptr_t *dst = (uintptr_t *)region;
+	for (uintptr_t i = 0; i < ((blobsz + sizeof(uintptr_t) - 1) / sizeof(uintptr_t)); ++i)
+		dst[i] = src[i];
+	gdbstub_memsync(region, blobsz);
+	gdbstub_fencei();
+	gdbstub_boot_puts("gdbstub: awaiting gdb (load then continue, or continue)\n");
+	((void (*)(void *, uintptr_t, uintptr_t *))region)(gdbstub_devaddr(), gdbstub_membeg(), IRQCTRLADDR);
+	__builtin_unreachable();
 }
 
 // ****************************************************************************
@@ -1513,7 +2079,8 @@ static void gdbstub_dispatch (unsigned pkt_len) {
 			goto error;
 		if (ptr >= end || *ptr++ != ':')
 			goto error;
-		if (length > sizeof(gdbstub.mem_buf) || !gdbstub_memok(addr, length))
+		if (length > sizeof(gdbstub.mem_buf) || !gdbstub_memok(addr, length) ||
+			gdbstub_entry_covered(addr, length))
 			goto error;
 		status = gdbstub_dec_hex(ptr, (end - ptr),
 			gdbstub.mem_buf, length);
@@ -1834,7 +2401,8 @@ static void gdbstub_emergency (uintptr_t signum) {
 				goto error;
 			if (ptr >= end || *ptr++ != ':')
 				goto error;
-			if (length > sizeof(gdbstub.mem_buf) || !gdbstub_memok(addr, length))
+			if (length > sizeof(gdbstub.mem_buf) || !gdbstub_memok(addr, length) ||
+				gdbstub_entry_covered(addr, length))
 				goto error;
 			status = gdbstub_dec_hex(ptr, (end - ptr),
 				gdbstub.mem_buf, length);
