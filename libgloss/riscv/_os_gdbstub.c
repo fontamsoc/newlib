@@ -1511,29 +1511,38 @@ static void gdbstub_last_push (_thread_t *t) {
 	gdbstub.last_resumed[0] = t;
 }
 
-// Resume every thread the stub parked; used by detach/kill. The
-// debug-shell is skipped: resting parked IS its normal state, and
-// resuming it would loop forever (it re-parks right away, ie: the
-// engine and the shell would ping-pong).
+// Resume every thread the stub parked; used by detach/kill. Each thread
+// is resumed at most once, from a snapshot of the parked list taken
+// before any of them can run: a thread at rest on an ebreak of the
+// program itself (ie: _exit() parking a finished program, __halt(), the
+// asm("ebreak") park idiom) re-parks the instant it resumes, as nothing
+// advances mepc past an ebreak and only gdb can rewrite the instruction
+// it rests on; a loop rescanning a list which grows back would hence
+// ping-pong with such a thread forever, never replying to the detach.
+// The debug-shell, always in that case, is skipped altogether: resting
+// parked IS its normal state.
+// Preemption stays disabled from the snapshot through the last resume,
+// so that a thread resumed here cannot re-park in-between and have its
+// fresh entry mistaken for one of the snapshot.
 static void gdbstub_unpark_all (void) {
-	while (1) {
-		_thread_t *t = 0;
-		_preempt_disable();
-		while (_xchg(&gdbstub.plock, 1));
-		for (uintptr_t i = 0; i < __gdbstub_parked_cnt; ++i) {
-			if (__gdbstub_parked[i].thrd != gdbstub.shell) {
-				t = __gdbstub_parked[i].thrd;
-				gdbstub_parked_del(i);
-				break;
-			}
+	_thread_t *thrd[GDBSTUB_PARKED_MAX];
+	uintptr_t cnt = 0;
+	_preempt_disable();
+	while (_xchg(&gdbstub.plock, 1));
+	for (uintptr_t i = 0; i < __gdbstub_parked_cnt;) {
+		if (__gdbstub_parked[i].thrd == gdbstub.shell) {
+			i += 1; // Skipped, hence never removed: the index must move on.
+			continue;
 		}
-		_xchg(&gdbstub.plock, 0);
-		if (t && !_is_thread_terminated(t))
-			_thread_schedoncpu(t, t->cpu, t->pin);
-		_preempt_enable();
-		if (!t)
-			break;
+		thrd[cnt++] = __gdbstub_parked[i].thrd;
+		gdbstub_parked_del(i); // Shifts the entries down; the index stays.
 	}
+	_xchg(&gdbstub.plock, 0);
+	for (uintptr_t i = 0; i < cnt; ++i) {
+		if (!_is_thread_terminated(thrd[i]))
+			_thread_schedoncpu(thrd[i], thrd[i]->cpu, thrd[i]->pin);
+	}
+	_preempt_enable();
 }
 
 // Park the selection if it is a stoppable thread, so that ^C (and the
