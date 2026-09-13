@@ -156,6 +156,13 @@ char _gdbstub_active = 1;
 
 #define GDBSTUB_STEP_MAX 4
 
+// How long a reply awaits its acknowledgment before being abandoned;
+// gdb sends one as soon as it reads the reply, hence any expiry means
+// nobody is listening anymore. Generous: gdb itself gives a remote two
+// seconds by default (set remotetimeout), and the stub must not outrun
+// an arbitrarily slow transport.
+#define GDBSTUB_ACK_TIMEOUT _MSECS(2000)
+
 // The selection: the thread whose registers g/G/p/P serve and which
 // c/s/^C act on; gdb switches it with: set var __gdbstub_tp = <thread> .
 // The stub never writes null in it (a bogus value, including null, makes
@@ -293,9 +300,15 @@ static void gdbstub_dev_recover (void) {
 // whatever exchange the caller was in the middle of, which must be
 // abandoned (awaiting its bytes would wait forever); the timeout on
 // the sleep below also bounds how late that gets detected.
+// It also returns -1 once the deadline argument has passed, null
+// meaning no deadline; the acknowledgment wait uses one so that a gdb
+// which dropped the link cannot pin the engine thread (and the wire it
+// holds) forever. The deadline is honored within one spin round plus
+// the sleep timeout below.
 // Within a trap (ie: an emergency session), it degrades to the
-// blocking read as there is no thread machinery to wait with.
-static int gdbstub_getc_poll (unsigned epoch) {
+// blocking read as there is no thread machinery to wait with, the
+// deadline having no meaning there either.
+static int gdbstub_getc_poll (unsigned epoch, _date_t deadline) {
 	if (_trap_savedctx())
 		return gdbstub_getc();
 	while (1) {
@@ -310,6 +323,8 @@ static int gdbstub_getc_poll (unsigned epoch) {
 			}
 			_preempt_enable();
 		}
+		if (deadline && _clkcycles() >= deadline)
+			return -1;
 		// Level interrupt: arm before the final check, as in
 		// gdbstub_getc_wait(), so that a byte landing in-between
 		// pends the interrupt across the sleep instead of being
@@ -1054,10 +1069,19 @@ static unsigned char gdbstub_checksum (char *buf, unsigned len) {
 // Transmit a packet of data of the form: $<packet-data>#<checksum> ;
 // retransmits until gdb acknowledges it, or until an emergency session
 // takes over the wire (it then owns the dialogue; the pending
-// acknowledgment is abandoned).
+// acknowledgment is abandoned), or until the acknowledgment deadline
+// passes: a gdb which dropped the link (ie: killed while the stub was
+// replying, or a detach whose reply it never read back) would otherwise
+// pin the engine thread here forever, holding the wire, leaving the
+// stub unreachable until a reset. The deadline covers the retransmits
+// too, hence bounds the whole transmission. Abandoning a reply is safe:
+// the engine returns to its packet-start scan, which discards a late
+// acknowledgment as noise, and a gdb which did miss the reply gets it
+// again when it retransmits its packet.
 static void gdbstub_send_packet (char *pkt_data, unsigned pkt_len) {
 	void *self = gdbstub_wire_self();
 	unsigned epoch = gdbstub.wire_epoch;
+	_date_t deadline = (_clkcycles() + GDBSTUB_ACK_TIMEOUT);
 	gdbstub_wire_acquire(self);
 	while (1) {
 		gdbstub_putc('$');
@@ -1069,7 +1093,7 @@ static void gdbstub_send_packet (char *pkt_data, unsigned pkt_len) {
 		gdbstub_putc(gdbstub_digit(csum & 0xf));
 		int c;
 		do { // Wait for the acknowledgment.
-			c = gdbstub_getc_poll(epoch);
+			c = gdbstub_getc_poll(epoch, deadline);
 		} while (c != -1 && c != '+' && c != '-');
 		if (c != '-')
 			break;
@@ -1114,7 +1138,7 @@ static unsigned gdbstub_recv_packet (void) {
 		}
 		unsigned len = 0;
 		bool overflow = false;
-		while ((c = gdbstub_getc_poll(epoch)) != '#') { // Read data until the checksum.
+		while ((c = gdbstub_getc_poll(epoch, 0)) != '#') { // Read data until the checksum.
 			if (c == -1)
 				break; // Emergency interposed; restart.
 			if (c == '$') { // Unexpected packet restart.
@@ -1130,8 +1154,8 @@ static unsigned gdbstub_recv_packet (void) {
 		if (c == -1)
 			continue;
 		char hex[2];
-		int h0 = gdbstub_getc_poll(epoch);
-		int h1 = gdbstub_getc_poll(epoch);
+		int h0 = gdbstub_getc_poll(epoch, 0);
+		int h1 = gdbstub_getc_poll(epoch, 0);
 		if (h0 == -1 || h1 == -1)
 			continue; // Emergency interposed; restart.
 		hex[0] = h0;
