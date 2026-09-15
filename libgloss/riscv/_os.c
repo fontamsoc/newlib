@@ -32,7 +32,10 @@ __attribute__((noinline)) static void __printstr (char *s) {
 		*(volatile char *)SERIAL0_ADDR = c;
 }
 
-uint8_t __trap_stacks[NCPU][TRAP_STACK_SIZE];
+// The per-CPU trap stacks are written before being read, so they need
+// no clearing at boot: .noinit keeps them out of the .bss memset; aligned
+// as the psABI requires of sp, which crt0.S sets to a stack top.
+uint8_t __trap_stacks[NCPU][TRAP_STACK_SIZE] __attribute__((noinit, aligned(16)));
 
 // Halt the system, or break into the debugger when the gdbstub is linked-in.
 __attribute__((noreturn)) static void __halt (void) {
