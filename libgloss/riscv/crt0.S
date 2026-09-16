@@ -112,12 +112,16 @@ _start:
   # still spinning and tp is not set, ie: the hook must not touch
   # _thread_cur, which is tp.
   call __gdbstub_boot
-  # Init BSS up to __bss_end; .noinit follows it untouched, .persistent precedes __bss_start.
-  la   a0, __bss_start
-  la   a2, __bss_end
-  sub  a2, a2, a0
-  li   a1, 0
-  call memset
+  # Zero .bss, whose bounds the linker script keeps word aligned, with atomic
+  # stores, which go straight to memory: a plain store would leave a dirty
+  # zero in the dcache, which the first atomic access to that word by this
+  # hart would write back over an update another hart made in memory, losing
+  # it. .noinit follows __bss_end untouched, .persistent precedes __bss_start.
+  la    t0, __bss_start
+  la    t1, __bss_end
+0:AMOSWAP x0, x0, (t0)
+  addi  t0, t0, SZREG
+  bltu  t0, t1, 0b
 
   # Ascending stack layout:
   # ------------------------ Start of stack.
