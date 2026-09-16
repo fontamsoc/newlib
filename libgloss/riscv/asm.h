@@ -18,5 +18,6 @@
 #define SZREG __XLEN_SEL(8, 4)
 #define LGREG __XLEN_SEL(3, 2)
 #define AMOSWAP __XLEN_SEL(amoswap.d.aqrl, amoswap.w.aqrl)
+#define AMOADD __XLEN_SEL(amoadd.d.aqrl, amoadd.w.aqrl)
 
 #endif /* __LIBGLOSS_RISCV_ASM_H */

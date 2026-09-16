@@ -77,36 +77,33 @@ _start:
   # Check whether saving/restoring .data .
   REG_L a2, __rst_flg
   bnez  a2, 0f
-  # Save .data section to the stack bottom.
-  la    a1, __DATA_BEGIN__
-  la    a2, _edata
-  sub   a2, a2, a1
-  sub   sp, sp, a2
-  mv    a0, sp
-  REG_S a2, __rst_flg, t0
-  call  memcpy
-  # Push the copy and __rst_flg past the write-back dcache, whose dirty
-  # words a reset discards: a warm boot following this cold boot would
-  # otherwise restore .data from a copy which never reached memory.
-  la    t0, __DATA_BEGIN__
-  la    t1, _edata
-  sub   t1, t1, t0
-  add   t1, t1, sp
-  mv    t0, sp
-4:REG_L t2, 0(t0)
-  AMOSWAP x0, t2, (t0)
-  addi  t0, t0, SZREG
-  bltu  t0, t1, 4b
-  la    t0, __rst_flg
-  REG_L t2, 0(t0)
-  AMOSWAP x0, t2, (t0)
-  j 1f
-0:# Restore .data section from the stack bottom.
+  # Cold boot: the copy of .data goes below the stack; __rst_flg, saved with
+  # the copy, then holds the size of .data, which marks the following boots warm.
   la    a0, __DATA_BEGIN__
+  la    a2, _edata
+  sub   a2, a2, a0
   sub   sp, sp, a2
   mv    a1, sp
-  call  memcpy
-1:
+  la    t0, __rst_flg
+  AMOSWAP x0, a2, (t0)
+  j     2f
+0:# Warm boot: .data is restored from the copy below the stack.
+  la    a1, __DATA_BEGIN__
+  sub   sp, sp, a2
+  mv    a0, sp
+2:# Copy a2 bytes from a0 to a1, read and written with atomic accesses, which
+  # go straight to memory: a reset discards the dirty words of the write-back
+  # dcache, so the copy must reach memory at cold boot; and an atomic access
+  # to a locally cached word writes the cached value back before its
+  # read-modify-write, so no word of .data, read at cold boot or written at
+  # warm boot, may stay cached by this hart, as its stale value written back
+  # over an update another hart made in memory would lose that update.
+  add   a2, a2, a0
+3:AMOADD  t2, x0, (a0)
+  AMOSWAP x0, t2, (a1)
+  addi  a0, a0, SZREG
+  addi  a1, a1, SZREG
+  bltu  a0, a2, 3b
   # Let the gdbstub take over the boot when a program reload is pending:
   # .data is pristine, .bss is not yet cleared, the secondary harts are
   # still spinning and tp is not set, ie: the hook must not touch
