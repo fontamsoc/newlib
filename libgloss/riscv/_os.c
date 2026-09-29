@@ -982,7 +982,14 @@ void _thread_sleeponwquntil (_waitq_t *wq, _date_t e) {
 	runq->cur = nxtthrd;
 	_thread_cur->state = _THREAD_STOPPED;
 	if (runq->cnt > 1) {
-		_date_t scheddate = (_clkcycles() + (schedlrhz / runq->cnt) + nxtthrd->timeleft);
+		// The next thread runs for the time it had left when a thread woken up
+		// preempted it, bounded by a slice, otherwise for a slice; adding the time
+		// left to a slice instead would let it grow at every such preemption, and
+		// delay the other threads beyond SCHEDLRHZ.
+		_date_t slice = (schedlrhz / runq->cnt);
+		if (nxtthrd->timeleft && nxtthrd->timeleft < slice)
+			slice = nxtthrd->timeleft;
+		_date_t scheddate = (_clkcycles() + slice);
 		nxtthrd->timeleft = 0;
 		_timer_arm(&runq->schedlr, scheddate);
 		runq->scheddate = scheddate;
@@ -1085,7 +1092,11 @@ static void __thread_cur_preempt (uintptr_t cpu) {
 	runq->cur = nxtthrd;
 	if (nxtthrd != _thread_cur) {
 		if (runq->cnt > 1) {
-			_date_t scheddate = (_clkcycles() + (schedlrhz / runq->cnt) + nxtthrd->timeleft);
+			// As in _thread_sleeponwquntil(): the time left, bounded by a slice.
+			_date_t slice = (schedlrhz / runq->cnt);
+			if (nxtthrd->timeleft && nxtthrd->timeleft < slice)
+				slice = nxtthrd->timeleft;
+			_date_t scheddate = (_clkcycles() + slice);
 			nxtthrd->timeleft = 0;
 			_timer_arm(&runq->schedlr, scheddate);
 			runq->scheddate = scheddate;
