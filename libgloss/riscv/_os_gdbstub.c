@@ -82,6 +82,9 @@
 #include "_os.h"
 #include "_os_params.h"
 
+// The serial devices of the gdbstub transfer a byte at a time; only
+// hwdrvchar_readable() and hwdrvchar_interrupt() are used anyway.
+#define HWDRVCHAR_DATATYPE uint8_t
 #include <machine/hwdrvchar.h>
 #include <machine/hwdrvirqctrl.h>
 
