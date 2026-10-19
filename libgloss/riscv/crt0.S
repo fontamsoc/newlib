@@ -70,6 +70,18 @@ _start:
   csrs mstatus, 0x8 /* Set mstatus.mie to enable IRQs */
   wfi
 1:
+  # A loader starting this image by a reset, which writes no register but sp,
+  # ie: apps/bootldr, can give it another end of memory: register ra then holds
+  # -1, which no link can be, register a0 is null, and register a1 holds that
+  # end, unless null. A later reset leaves the registers as they were, hence
+  # the warm boots take the end of memory from __rst_sp, set at cold boot, once
+  # the oops check below passed with the end of memory which the reset gives.
+  li    t0, -1
+  bne   ra, t0, 0f
+  bnez  a0, 0f
+  beqz  a1, 0f
+  mv    sp, a1
+0:
   # Oops if memory ends below _end, ie: if the image does not fit
   # in memory; it must be done before the first memory access below.
   la    t0, _end
@@ -77,8 +89,13 @@ _start:
   # Check whether saving/restoring .data .
   REG_L a2, __rst_flg
   bnez  a2, 0f
-  # Cold boot: the copy of .data goes below the stack; __rst_flg, saved with
-  # the copy, then holds the size of .data, which marks the following boots warm.
+  # Cold boot: __rst_sp keeps the end of memory for the warm boots, set before
+  # __rst_flg marks them warm, using an atomic store, which goes straight to
+  # memory, as a reset discards the dirty words of the write-back dcache.
+  la    t0, __rst_sp
+  AMOSWAP x0, sp, (t0)
+  # The copy of .data goes below the stack; __rst_flg, saved with the
+  # copy, then holds the size of .data, which marks the following boots warm.
   la    a0, __DATA_BEGIN__
   la    a2, _edata
   sub   a2, a2, a0
@@ -87,7 +104,9 @@ _start:
   la    t0, __rst_flg
   AMOSWAP x0, a2, (t0)
   j     2f
-0:# Warm boot: .data is restored from the copy below the stack.
+0:# Warm boot: .data is restored from the copy below the stack, which
+  # begins at the end of memory which the cold boot used.
+  REG_L sp, __rst_sp
   la    a1, __DATA_BEGIN__
   sub   sp, sp, a2
   mv    a0, sp
@@ -524,10 +543,14 @@ __switchctx:
 
   .data
   .p2align LGREG
+  # __rst_sp holds the end of memory which the cold boot used, ie: where the
+  # stack data which apps/bootldr passes begins, when there is some.
   .global __rst_flg;  __rst_flg:  LITWORD 0
+  .global __rst_sp;   __rst_sp:   LITWORD 0
   .global __heap_ptr; __heap_ptr: LITWORD 0
   .global __heap_end; __heap_end: LITWORD 0
   .size   __rst_flg,  SZREG
+  .size   __rst_sp,   SZREG
   .size   __heap_ptr, SZREG
   .size   __heap_end, SZREG
 
